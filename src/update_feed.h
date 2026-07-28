@@ -9,6 +9,8 @@
 // e.g.  0.2.0    https://example.com/gws/engine-0.2.0.zip    Bug fixes
 // The package is a .zip whose contents include editor.exe (the engine folder).
 // ============================================================================
+#include "http_client.h"   // HttpHeaders
+
 #include <functional>
 #include <string>
 #include <vector>
@@ -30,8 +32,11 @@ bool fetch_feed(const std::string& feed_url, std::vector<RemoteVersion>& out,
 
 // Download the package, extract it (bsdtar), locate the engine folder, and
 // install it as `rv.version`. `progress` receives human-readable step messages.
+// `dl_headers` are extra request headers for the download (e.g. GitHub auth for
+// a private release asset).
 bool download_and_install(const RemoteVersion& rv, std::string* err = nullptr,
-                          const std::function<void(const std::string&)>& progress = nullptr);
+                          const std::function<void(const std::string&)>& progress = nullptr,
+                          const HttpHeaders& dl_headers = {});
 
 // The configured feed URL (persisted in the user config dir), or a default.
 std::string feed_url();

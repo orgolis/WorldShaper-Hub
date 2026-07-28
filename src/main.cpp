@@ -105,6 +105,8 @@ int main() {
     std::vector<RemoteVersion> remote_versions;  // last "Check for Updates" result
     char       repo_buf[256] = {0};              // GitHub "owner/repo" to pull from
     { std::string r = github_repo(); std::snprintf(repo_buf, sizeof(repo_buf), "%s", r.c_str()); }
+    char       token_buf[256] = {0};             // GitHub token for private repos
+    { std::string t = github_token(); std::snprintf(token_buf, sizeof(token_buf), "%s", t.c_str()); }
 
     auto open_project = [&](const std::string& manifest_path) {
         ProjectManifest pm;
@@ -279,9 +281,15 @@ int main() {
                 ImGui::TextDisabled("Pulls engine versions from a GitHub repo's releases.");
                 ImGui::SetNextItemWidth(340);
                 ImGui::InputText("owner/repo", repo_buf, sizeof(repo_buf));
-                ImGui::SameLine();
+                ImGui::SetNextItemWidth(340);
+                ImGui::InputText("token", token_buf, sizeof(token_buf), ImGuiInputTextFlags_Password);
+                ImGui::SameLine(); ImGui::TextDisabled("(?)");
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("GitHub personal-access-token with read access — required for PRIVATE\n"
+                                      "engine repos. Leave empty for public repos. Saved locally.");
                 if (ImGui::Button("Check for Updates")) {
                     set_github_repo(repo_buf);
+                    set_github_token(token_buf);
                     std::string spec = repo_buf, e;
                     size_t slash = spec.find('/');
                     if (slash == std::string::npos || slash == 0 || slash + 1 >= spec.size()) {
@@ -303,7 +311,7 @@ int main() {
                         if (ImGui::SmallButton("Download & Install")) {
                             std::string e;
                             status = "Downloading " + rv.version + "...";
-                            if (download_and_install(rv, &e)) {
+                            if (download_and_install(rv, &e, nullptr, github_download_headers())) {
                                 status = "Installed " + rv.version + ".";
                                 engines.scan(dev_editor);
                             } else status = "Update failed: " + e;

@@ -22,10 +22,22 @@ std::wstring widen(const std::string& s) {
     MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), w.data(), n);
     return w;
 }
+std::string narrow(const std::wstring& w) {
+    if (w.empty()) return "";
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    std::string s(n, 0);
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), s.data(), n, nullptr, nullptr);
+    return s;
+}
 
 // Perform a GET, feeding each received chunk to `sink`. Returns false + `err`.
+// Redirects are followed MANUALLY (auto-redirect disabled) so that request
+// headers — notably Authorization — are NOT re-sent across origins: a GitHub
+// asset API 302s to a pre-signed AWS URL that rejects an extra Authorization
+// header. We therefore follow the Location with EMPTY headers.
 bool http_get(const std::string& url,
-              const std::function<bool(const char*, size_t)>& sink, std::string* err) {
+              const std::function<bool(const char*, size_t)>& sink, std::string* err,
+              const HttpHeaders& headers, int redirects_left = 5) {
     auto fail = [&](const std::string& m) { if (err) *err = m; return false; };
 
     std::wstring wurl = widen(url);
@@ -55,7 +67,16 @@ bool http_get(const std::string& url,
                                       WINHTTP_DEFAULT_ACCEPT_TYPES, https ? WINHTTP_FLAG_SECURE : 0);
     if (!hR) { close_all(hS, hC, nullptr); return fail("WinHttpOpenRequest failed"); }
 
-    if (!WinHttpSendRequest(hR, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+    // Disable auto-redirect so we can follow it ourselves without leaking headers.
+    { DWORD feat = WINHTTP_DISABLE_REDIRECTS;
+      WinHttpSetOption(hR, WINHTTP_OPTION_DISABLE_FEATURE, &feat, sizeof(feat)); }
+
+    std::wstring wheaders;
+    for (const auto& h : headers) { wheaders += widen(h); wheaders += L"\r\n"; }
+    LPCWSTR hdr_ptr = wheaders.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : wheaders.c_str();
+    DWORD   hdr_len = wheaders.empty() ? 0 : static_cast<DWORD>(-1L);
+
+    if (!WinHttpSendRequest(hR, hdr_ptr, hdr_len,
                             WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
         !WinHttpReceiveResponse(hR, nullptr)) {
         close_all(hS, hC, hR); return fail("request failed (offline / unreachable host?)");
@@ -64,6 +85,16 @@ bool http_get(const std::string& url,
     DWORD status = 0, len = sizeof(status);
     WinHttpQueryHeaders(hR, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                         WINHTTP_HEADER_NAME_BY_INDEX, &status, &len, WINHTTP_NO_HEADER_INDEX);
+
+    // Follow redirects manually, dropping headers (see note above).
+    if (status >= 300 && status < 400 && redirects_left > 0) {
+        wchar_t loc[8192] = {0}; DWORD llen = sizeof(loc);
+        BOOL got = WinHttpQueryHeaders(hR, WINHTTP_QUERY_LOCATION, WINHTTP_HEADER_NAME_BY_INDEX,
+                                       loc, &llen, WINHTTP_NO_HEADER_INDEX);
+        close_all(hS, hC, hR);
+        if (!got) return fail("redirect without Location");
+        return http_get(narrow(std::wstring(loc)), sink, err, {}, redirects_left - 1);
+    }
     if (status < 200 || status >= 300) {
         close_all(hS, hC, hR); return fail("HTTP status " + std::to_string(status));
     }
@@ -85,13 +116,15 @@ bool http_get(const std::string& url,
 
 } // namespace
 
-bool http_get_string(const std::string& url, std::string& out, std::string* err) {
+bool http_get_string(const std::string& url, std::string& out, std::string* err,
+                     const HttpHeaders& headers) {
     out.clear();
-    return http_get(url, [&](const char* d, size_t n) { out.append(d, n); return true; }, err);
+    return http_get(url, [&](const char* d, size_t n) { out.append(d, n); return true; }, err, headers);
 }
 
 bool http_download_file(const std::string& url, const std::string& dest_path,
-                        std::string* err, const std::function<void(size_t)>& on_bytes) {
+                        std::string* err, const std::function<void(size_t)>& on_bytes,
+                        const HttpHeaders& headers) {
     std::ofstream f(dest_path, std::ios::binary);
     if (!f) { if (err) *err = "cannot open destination file"; return false; }
     size_t total = 0;
@@ -100,17 +133,17 @@ bool http_download_file(const std::string& url, const std::string& dest_path,
         total += n;
         if (on_bytes) on_bytes(total);
         return static_cast<bool>(f);
-    }, err);
+    }, err, headers);
     f.close();
     return ok;
 }
 
 #else  // non-Windows stub
-bool http_get_string(const std::string&, std::string&, std::string* err) {
+bool http_get_string(const std::string&, std::string&, std::string* err, const HttpHeaders&) {
     if (err) *err = "HTTP not supported on this platform"; return false;
 }
 bool http_download_file(const std::string&, const std::string&, std::string* err,
-                        const std::function<void(size_t)>&) {
+                        const std::function<void(size_t)>&, const HttpHeaders&) {
     if (err) *err = "HTTP not supported on this platform"; return false;
 }
 #endif

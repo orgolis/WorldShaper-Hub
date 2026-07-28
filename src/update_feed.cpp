@@ -110,7 +110,8 @@ bool fetch_feed(const std::string& feed_url_, std::vector<RemoteVersion>& out, s
 }
 
 bool download_and_install(const RemoteVersion& rv, std::string* err,
-                          const std::function<void(const std::string&)>& progress) {
+                          const std::function<void(const std::string&)>& progress,
+                          const HttpHeaders& dl_headers) {
     auto note = [&](const std::string& m) { if (progress) progress(m); spdlog::info("[update] {}", m); };
     std::error_code ec;
     fs::path tmp = fs::temp_directory_path() / ("gws_update_" + rv.version);
@@ -119,7 +120,7 @@ bool download_and_install(const RemoteVersion& rv, std::string* err,
 
     fs::path zip = tmp / "package.zip";
     note("Downloading " + rv.version + "...");
-    if (!http_download_file(rv.url, zip.string(), err)) { fs::remove_all(tmp, ec); return false; }
+    if (!http_download_file(rv.url, zip.string(), err, nullptr, dl_headers)) { fs::remove_all(tmp, ec); return false; }
 
     note("Extracting...");
     fs::path ex = tmp / "extract";

@@ -80,6 +80,9 @@ These require a GitHub account and can't be done from a local build:
    release by pushing a tag like `v0.2.0`.
 3. **In the Hub:** open the *Engine Versions* tab, set **owner/repo** to your
    engine repo (e.g. `your-org/GameWorldshaper-Engine`), and **Check for Updates**.
+   For a **private** engine repo, also paste a GitHub **personal-access-token**
+   (read access) into the token field — the Hub then authenticates both the
+   releases API and the asset download. Public repos need no token.
 4. Optionally add CI to this repo to publish the Hub's own installer on release.
 
 The `owner/repo` you enter is saved to

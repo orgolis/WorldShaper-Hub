@@ -19,6 +19,14 @@ fs::path config_dir() {
     if (const char* hp = std::getenv("USERPROFILE")) return fs::path(hp) / ".gameworldshaper";
     return fs::path(".") / ".gameworldshaper";
 }
+
+// Headers for GitHub API JSON calls (+ Authorization when a token is configured).
+HttpHeaders api_json_headers() {
+    HttpHeaders h{ "Accept: application/vnd.github+json", "X-GitHub-Api-Version: 2022-11-28" };
+    std::string t = github_token();
+    if (!t.empty()) h.push_back("Authorization: Bearer " + t);
+    return h;
+}
 } // namespace
 
 bool fetch_github_releases(const std::string& owner, const std::string& repo,
@@ -29,7 +37,8 @@ bool fetch_github_releases(const std::string& owner, const std::string& repo,
 
     const std::string url = api_base + "/repos/" + owner + "/" + repo + "/releases";
     std::string body;
-    if (!http_get_string(url, body, err)) return false;
+    if (!http_get_string(url, body, err, api_json_headers())) return false;
+    const bool have_token = !github_token().empty();
 
     json j;
     try { j = json::parse(body); }
@@ -42,9 +51,13 @@ bool fetch_github_releases(const std::string& owner, const std::string& repo,
         if (!rel.contains("assets") || !rel["assets"].is_array()) continue;
 
         for (const auto& a : rel["assets"]) {
-            const std::string an   = a.value("name", std::string());
-            const std::string durl = a.value("browser_download_url", std::string());
-            if (durl.empty() || an.find(asset_match) == std::string::npos) continue;
+            const std::string an = a.value("name", std::string());
+            if (an.find(asset_match) == std::string::npos) continue;
+            // Private repos: download via the auth'd asset API url (redirects to a
+            // signed URL). Public repos: the direct browser_download_url.
+            const std::string durl = have_token ? a.value("url", std::string())
+                                                : a.value("browser_download_url", std::string());
+            if (durl.empty()) continue;
 
             RemoteVersion rv;
             rv.version = (!tag.empty() && (tag[0] == 'v' || tag[0] == 'V')) ? tag.substr(1) : tag;
@@ -73,6 +86,32 @@ void set_github_repo(const std::string& owner_slash_repo) {
     std::error_code ec;
     fs::create_directories(config_dir(), ec);
     std::ofstream(config_dir() / "github_repo.txt", std::ios::trunc) << owner_slash_repo << "\n";
+}
+
+std::string github_token() {
+    std::ifstream in(config_dir() / "github_token.txt");
+    if (in) {
+        std::string s; std::getline(in, s);
+        while (!s.empty() && (s.back() == '\r' || s.back() == '\n' || s.back() == ' ')) s.pop_back();
+        if (!s.empty() && s[0] != '#') return s;
+    }
+    return {};
+}
+
+void set_github_token(const std::string& token) {
+    std::error_code ec;
+    fs::create_directories(config_dir(), ec);
+    std::ofstream(config_dir() / "github_token.txt", std::ios::trunc) << token << "\n";
+}
+
+HttpHeaders github_download_headers() {
+    HttpHeaders h;
+    std::string t = github_token();
+    if (!t.empty()) {
+        h.push_back("Authorization: Bearer " + t);
+        h.push_back("Accept: application/octet-stream");  // asset API returns the binary
+    }
+    return h;
 }
 
 } // namespace schizo::project

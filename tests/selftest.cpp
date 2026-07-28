@@ -27,10 +27,17 @@ int main(int argc, char** argv) {
     if (argc < 2) { std::cout << "usage: hub_selftest <api_base_url>\n"; return 2; }
     const std::string base = argv[1];
 
+    // Exercise the TOKEN (private-repo) path: the mock requires this exact token
+    // on every request (401 otherwise), so a success proves the auth header is
+    // sent on both the API call and the asset download. Save + restore the real
+    // token so the test doesn't clobber the user's config.
+    const std::string saved_token = github_token();
+    set_github_token("testtoken");
+
     std::string err;
     std::vector<RemoteVersion> v;
     bool ok = fetch_github_releases("me", "engine", v, &err, ".zip", base);
-    check("fetch_github_releases succeeds", ok);
+    check("fetch_github_releases succeeds (auth header sent)", ok);
     if (!ok) std::cout << "  (" << err << ")\n";
     check(">= 1 release with an engine asset", ok && !v.empty());
 
@@ -38,8 +45,8 @@ int main(int argc, char** argv) {
         check("tag 'v0.9.9' parsed to version '0.9.9'", v[0].version == "0.9.9");
         check("asset download URL present", !v[0].url.empty());
 
-        bool inst = download_and_install(v[0], &err);
-        check("download + extract + install", inst);
+        bool inst = download_and_install(v[0], &err, nullptr, github_download_headers());
+        check("download + extract + install (auth'd asset)", inst);
         if (!inst) std::cout << "  (" << err << ")\n";
 
         fs::path dest = fs::path(EngineRegistry::engines_dir()) / v[0].version;
@@ -49,6 +56,8 @@ int main(int argc, char** argv) {
         EngineRegistry::remove_installed_version(v[0].version, &err);
         check("cleanup removed it", !fs::exists(dest, ec));
     }
+
+    set_github_token(saved_token);   // restore the real config
 
     if (g_fail == 0) { std::cout << "hub_selftest: ALL OK\n"; return 0; }
     std::cout << "hub_selftest: " << g_fail << " FAILED\n";
