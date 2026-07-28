@@ -23,26 +23,25 @@ static void check(const char* what, bool ok) {
 }
 
 int main(int argc, char** argv) {
-    spdlog::set_level(spdlog::level::warn);
-    if (argc < 2) { std::cout << "usage: hub_selftest <api_base_url>\n"; return 2; }
-    const std::string base = argv[1];
+    spdlog::set_level(spdlog::level::info);
+    if (argc < 2) { std::cout << "usage: hub_selftest <api_base_url> [owner] [repo]\n"; return 2; }
+    const std::string base  = argv[1];
+    const bool        real  = (argc >= 4);           // real GitHub run: use config token
+    const std::string owner = real ? argv[2] : "me";
+    const std::string repo  = real ? argv[3] : "engine";
 
-    // Exercise the TOKEN (private-repo) path: the mock requires this exact token
-    // on every request (401 otherwise), so a success proves the auth header is
-    // sent on both the API call and the asset download. Save + restore the real
-    // token so the test doesn't clobber the user's config.
     const std::string saved_token = github_token();
-    set_github_token("testtoken");
+    if (!real) set_github_token("testtoken");        // mock mode requires this exact token
 
     std::string err;
     std::vector<RemoteVersion> v;
-    bool ok = fetch_github_releases("me", "engine", v, &err, ".zip", base);
+    bool ok = fetch_github_releases(owner, repo, v, &err, ".zip", base);
     check("fetch_github_releases succeeds (auth header sent)", ok);
     if (!ok) std::cout << "  (" << err << ")\n";
     check(">= 1 release with an engine asset", ok && !v.empty());
 
     if (ok && !v.empty()) {
-        check("tag 'v0.9.9' parsed to version '0.9.9'", v[0].version == "0.9.9");
+        if (!real) check("tag 'v0.9.9' parsed to version '0.9.9'", v[0].version == "0.9.9");
         check("asset download URL present", !v[0].url.empty());
 
         bool inst = download_and_install(v[0], &err, nullptr, github_download_headers());

@@ -54,17 +54,35 @@ bool run_process(const std::string& app, const std::string& cmdline, std::string
 #endif
 }
 
-// Extract a .zip into `dest` using the OS bsdtar (Win10 1803+ ships tar.exe).
+// Extract a .zip into `dest`. Prefer the OS bsdtar (Win10 1803+ ships
+// tar.exe); if it's absent or fails, fall back to PowerShell's Expand-Archive
+// (present on every Win10/11). This avoids a hard dependency on tar.exe, which
+// isn't guaranteed on every Windows installation.
 bool extract_archive(const std::string& zip, const std::string& dest, std::string* err) {
     std::error_code ec;
     fs::create_directories(dest, ec);
 #ifdef _WIN32
-    std::string tar = "C:/Windows/System32/tar.exe";
+    const std::string tar = "C:/Windows/System32/tar.exe";
+    std::string terr;
+    if (fs::exists(tar, ec)) {
+        std::string cmd = "\"" + tar + "\" -xf \"" + zip + "\" -C \"" + dest + "\"";
+        if (run_process(tar, cmd, &terr)) return true;
+    } else {
+        terr = "tar.exe not found";
+    }
+    // Fallback: Windows PowerShell Expand-Archive (needs a .zip extension, which
+    // the downloaded package has).
+    const std::string ps = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe";
+    std::string pcmd = "\"" + ps + "\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "
+                       "\"Expand-Archive -LiteralPath '" + zip + "' -DestinationPath '" + dest + "' -Force\"";
+    std::string perr;
+    if (run_process(ps, pcmd, &perr)) return true;
+    if (err) *err = "extraction failed (tar: " + terr + "; PowerShell: " + perr + ")";
+    return false;
 #else
-    std::string tar = "tar";
+    std::string cmd = "\"tar\" -xf \"" + zip + "\" -C \"" + dest + "\"";
+    return run_process("tar", cmd, err);
 #endif
-    std::string cmd = "\"" + tar + "\" -xf \"" + zip + "\" -C \"" + dest + "\"";
-    return run_process(tar, cmd, err);
 }
 
 // Locate the folder containing editor.exe within an extracted tree (shallow).
