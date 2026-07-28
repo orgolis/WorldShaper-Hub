@@ -1,0 +1,23 @@
+# Build output
+/build/
+/build-*/
+bin/
+lib/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CMakeUserPresets.json
+
+# Artifacts
+*.zip
+*.exe
+*.dll
+*.log
+*.tmp
+
+# IDE
+.vs/
+.vscode/
+.idea/
