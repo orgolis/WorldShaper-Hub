@@ -70,11 +70,11 @@ if(MINGW OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         add_custom_command(TARGET GameWorldshaperHub POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${_mingw_bin}/${dll}" "$<TARGET_FILE_DIR:GameWorldshaperHub>" VERBATIM)
-        install(FILES "${_mingw_bin}/${dll}" DESTINATION .)
+        install(FILES "${_mingw_bin}/${dll}" DESTINATION . COMPONENT hub)
     endforeach()
 endif()
 
-install(TARGETS GameWorldshaperHub RUNTIME DESTINATION .)
+install(TARGETS GameWorldshaperHub RUNTIME DESTINATION . COMPONENT hub)
 
 # --- Packaging: a Hub installer (ZIP always; NSIS when makensis is present) ---
 set(CPACK_PACKAGE_NAME "GameWorldshaperHub")
@@ -82,6 +82,12 @@ set(CPACK_PACKAGE_VENDOR "GameWorldshaper")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "GameWorldshaper Hub")
 set(CPACK_PACKAGE_EXECUTABLES "GameWorldshaperHub;GameWorldshaper Hub")
+# Package ONLY the "hub" component (exe + runtime DLLs) so FetchContent deps'
+# own install() output (GLFW headers/libs, etc.) is excluded.
+set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+set(CPACK_COMPONENTS_ALL hub)
+set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
+set(CPACK_ARCHIVE_FILE_NAME "GameWorldshaperHub-${PROJECT_VERSION}-win64")
 if(WIN32)
     set(CPACK_GENERATOR "ZIP")
     find_program(GWS_MAKENSIS makensis)
