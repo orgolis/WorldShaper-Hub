@@ -79,7 +79,7 @@ std::string github_repo() {
         while (!s.empty() && (s.back() == '\r' || s.back() == '\n' || s.back() == ' ')) s.pop_back();
         if (!s.empty() && s[0] != '#') return s;
     }
-    return "your-org/GameWorldshaper-Engine";  // placeholder — set in the Hub
+    return "orgolis/c-Engine-Game";  // the public engine repo — works with no token
 }
 
 void set_github_repo(const std::string& owner_slash_repo) {

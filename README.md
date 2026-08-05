@@ -42,10 +42,12 @@ cd build && cpack
   DLLs + default content). The Hub discovers them under
   `%LOCALAPPDATA%\GameWorldshaper\Engines\<version>\` and next to the Hub exe,
   and registers a sibling `editor.exe` as the `dev` version.
-- **Remote updates** pull from a GitHub repo's Releases: set `owner/repo` in the
-  Engine Versions tab, click **Check for Updates**, and the Hub reads the repo's
-  releases, then downloads + extracts + installs the engine `.zip` asset from any
-  release you pick.
+- **Remote updates** pull from a GitHub repo's Releases: the Engine Versions tab
+  defaults to the public engine repo (`orgolis/c-Engine-Game`), so you just click
+  **Check for Updates** and **Download & Install** — **no token, no sign-in**. The
+  Hub reads the repo's releases and downloads + extracts + installs the engine
+  `.zip` asset from any release you pick. (A token is only needed if you point it
+  at a *private* engine repo — see the optional "Advanced" field.)
 
 ---
 
@@ -78,11 +80,13 @@ These require a GitHub account and can't be done from a local build:
 2. **Engine repo:** ensure `.github/workflows/release-engine.yml` is present (it
    builds → CPacks an engine-only `.zip` → uploads it to the Release). Cut a
    release by pushing a tag like `v0.2.0`.
-3. **In the Hub:** open the *Engine Versions* tab, set **owner/repo** to your
-   engine repo (e.g. `your-org/GameWorldshaper-Engine`), and **Check for Updates**.
-   For a **private** engine repo, also paste a GitHub **personal-access-token**
-   (read access) into the token field — the Hub then authenticates both the
-   releases API and the asset download. Public repos need no token.
+3. **In the Hub:** open the *Engine Versions* tab. It defaults to the public
+   engine repo `orgolis/c-Engine-Game`, so just **Check for Updates** →
+   **Download & Install** — no token required. Point **owner/repo** at a
+   different repo if you like; only a **private** repo needs a
+   personal-access-token (read access), pasted into the optional **Advanced**
+   token field, which then authenticates both the releases API and the asset
+   download.
 4. Optionally add CI to this repo to publish the Hub's own installer on release.
 
 The `owner/repo` you enter is saved to

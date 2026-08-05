@@ -278,15 +278,20 @@ int main() {
                 ImGui::Dummy(ImVec2(0, 10));
                 ImGui::Separator();
                 ImGui::TextUnformatted("Remote updates (GitHub Releases)");
-                ImGui::TextDisabled("Pulls engine versions from a GitHub repo's releases.");
+                ImGui::TextDisabled("Pulls engine versions from a public GitHub repo's releases — no token needed.");
                 ImGui::SetNextItemWidth(340);
                 ImGui::InputText("owner/repo", repo_buf, sizeof(repo_buf));
-                ImGui::SetNextItemWidth(340);
-                ImGui::InputText("token", token_buf, sizeof(token_buf), ImGuiInputTextFlags_Password);
-                ImGui::SameLine(); ImGui::TextDisabled("(?)");
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("GitHub personal-access-token with read access — required for PRIVATE\n"
-                                      "engine repos. Leave empty for public repos. Saved locally.");
+                // Token is OPTIONAL — only for private engine repos — so it lives in
+                // a collapsed "Advanced" section and the default flow stays token-free.
+                if (ImGui::TreeNode("Advanced: private-repo token (optional)")) {
+                    ImGui::SetNextItemWidth(340);
+                    ImGui::InputText("token", token_buf, sizeof(token_buf), ImGuiInputTextFlags_Password);
+                    ImGui::SameLine(); ImGui::TextDisabled("(?)");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Only needed if the engine repo is PRIVATE.\n"
+                                          "Leave empty for public repos. Saved locally.");
+                    ImGui::TreePop();
+                }
                 if (ImGui::Button("Check for Updates")) {
                     set_github_repo(repo_buf);
                     set_github_token(token_buf);

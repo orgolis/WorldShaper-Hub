@@ -33,10 +33,14 @@ int main(int argc, char** argv) {
     const std::string saved_token = github_token();
     if (!real) set_github_token("testtoken");        // mock mode requires this exact token
 
+    const bool token_free = github_token().empty();
+    std::cout << "  mode: " << (real ? "real GitHub" : "mock")
+              << (token_free ? " (public, no token)" : " (authenticated)") << "\n";
+
     std::string err;
     std::vector<RemoteVersion> v;
     bool ok = fetch_github_releases(owner, repo, v, &err, ".zip", base);
-    check("fetch_github_releases succeeds (auth header sent)", ok);
+    check("fetch_github_releases succeeds", ok);
     if (!ok) std::cout << "  (" << err << ")\n";
     check(">= 1 release with an engine asset", ok && !v.empty());
 
@@ -45,7 +49,7 @@ int main(int argc, char** argv) {
         check("asset download URL present", !v[0].url.empty());
 
         bool inst = download_and_install(v[0], &err, nullptr, github_download_headers());
-        check("download + extract + install (auth'd asset)", inst);
+        check("download + extract + install", inst);
         if (!inst) std::cout << "  (" << err << ")\n";
 
         fs::path dest = fs::path(EngineRegistry::engines_dir()) / v[0].version;
@@ -56,7 +60,9 @@ int main(int argc, char** argv) {
         check("cleanup removed it", !fs::exists(dest, ec));
     }
 
-    set_github_token(saved_token);   // restore the real config
+    // Real runs never touch the token; only mock mode set a fake one — undo that
+    // so a token-free machine stays token-free (no lingering token file).
+    if (!real) set_github_token(saved_token);
 
     if (g_fail == 0) { std::cout << "hub_selftest: ALL OK\n"; return 0; }
     std::cout << "hub_selftest: " << g_fail << " FAILED\n";

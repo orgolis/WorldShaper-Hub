@@ -25,10 +25,12 @@ bool fetch_github_releases(const std::string& owner, const std::string& repo,
 std::string github_repo();
 void        set_github_repo(const std::string& owner_slash_repo);
 
-// Optional GitHub personal-access-token (read access) for PRIVATE engine repos.
-// Persisted at %APPDATA%/GameWorldshaper/github_token.txt. When set, the API is
-// queried with Authorization, and release assets are pulled via the auth'd asset
-// API. Empty token = public-repo mode (unauthenticated).
+// OPTIONAL GitHub personal-access-token (read access), only needed if the engine
+// repo is PRIVATE. The default repo (orgolis/c-Engine-Game) is PUBLIC, so the Hub
+// installs/updates with no token at all. Persisted at
+// %APPDATA%/GameWorldshaper/github_token.txt. When set, the API is queried with
+// Authorization and assets are pulled via the auth'd asset API; empty token =
+// public-repo mode (unauthenticated, the default).
 std::string github_token();
 void        set_github_token(const std::string& token);
 
