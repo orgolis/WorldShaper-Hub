@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -41,6 +43,58 @@ static std::string find_editor_in(const fs::path& dir) {
         if (fs::exists(p, ec)) return p.string();
     }
     return {};
+}
+
+std::string EngineRegistry::history_file() {
+    return (fs::path(engines_dir()) / "installed_versions.txt").string();
+}
+
+// TSV: one record per line, `version \t last_install_dir` (# comments).
+std::vector<InstalledRecord> EngineRegistry::load_history() {
+    std::vector<InstalledRecord> out;
+    std::ifstream in(history_file());
+    if (!in) return out;
+    std::string line;
+    while (std::getline(in, line)) {
+        while (!line.empty() && (line.back()=='\r' || line.back()=='\n')) line.pop_back();
+        if (line.empty() || line[0] == '#') continue;
+        const size_t tab = line.find('\t');
+        InstalledRecord r;
+        r.version = tab == std::string::npos ? line : line.substr(0, tab);
+        r.dir     = tab == std::string::npos ? ""   : line.substr(tab + 1);
+        if (!r.version.empty()) out.push_back(std::move(r));
+    }
+    return out;
+}
+
+void EngineRegistry::save_history(const std::vector<InstalledRecord>& h) {
+    std::error_code ec;
+    fs::create_directories(fs::path(engines_dir()), ec);
+    std::ofstream out(history_file(), std::ios::trunc);
+    out << "# GameWorldshaper engine-version install history: version <TAB> last install dir\n";
+    for (const auto& r : h) out << r.version << '\t' << r.dir << '\n';
+}
+
+void EngineRegistry::record_installed(const std::string& version, const std::string& dir) {
+    if (version.empty()) return;
+    auto h = load_history();
+    auto it = std::find_if(h.begin(), h.end(), [&](const InstalledRecord& r){ return r.version == version; });
+    if (it != h.end()) it->dir = dir;
+    else               h.push_back({version, dir, true});
+    save_history(h);
+}
+
+void EngineRegistry::forget_version(const std::string& version) {
+    auto h = load_history();
+    h.erase(std::remove_if(h.begin(), h.end(),
+                           [&](const InstalledRecord& r){ return r.version == version; }), h.end());
+    save_history(h);
+}
+
+std::vector<InstalledRecord> EngineRegistry::previously_installed() const {
+    std::vector<InstalledRecord> out;
+    for (const auto& r : history_) if (!r.present) out.push_back(r);
+    return out;
 }
 
 void EngineRegistry::scan(const std::string& dev_editor_exe) {
@@ -85,7 +139,27 @@ void EngineRegistry::scan(const std::string& dev_editor_exe) {
     scan_root(exe_dir / "Engines");
     scan_root(fs::path(engines_dir()));
 
-    spdlog::info("[engines] {} version(s) available", versions_.size());
+    // 3) Reconcile the install history: capture any present (non-dev) version not
+    //    yet recorded, then mark each record present/absent by what's on disk.
+    history_ = load_history();
+    bool changed = false;
+    for (const auto& v : versions_) {
+        if (v.is_dev) continue;
+        auto it = std::find_if(history_.begin(), history_.end(),
+                               [&](const InstalledRecord& r){ return r.version == v.version; });
+        if (it == history_.end()) { history_.push_back({v.version, v.install_dir, true}); changed = true; }
+        else if (it->dir != v.install_dir) { it->dir = v.install_dir; changed = true; }
+    }
+    size_t present = 0;
+    for (auto& r : history_) {
+        const EngineVersion* live = find(r.version);
+        r.present = (live != nullptr && !live->is_dev);
+        if (r.present) ++present;
+    }
+    if (changed) save_history(history_);
+
+    spdlog::info("[engines] {} version(s) available; history: {} installed, {} previously installed",
+                 versions_.size(), present, history_.size() - present);
 }
 
 bool EngineRegistry::is_user_installed(const EngineVersion& v) {
@@ -117,6 +191,7 @@ bool EngineRegistry::install_version(const std::string& source_dir,
     fs::copy(src, dest, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
     if (ec) return fail("copy failed: " + ec.message());
 
+    record_installed(version, dest.string());   // remember it in the history
     spdlog::info("[engines] installed version '{}' -> {}", version, dest.string());
     return true;
 }

@@ -22,6 +22,15 @@ struct EngineVersion {
     bool valid() const { return !editor_exe.empty(); }
 };
 
+// A version the Hub has installed at some point. Persisted so the Hub knows what
+// "was installed" even after a version's folder is removed (present=false) or the
+// Hub itself is reinstalled while the engines were kept.
+struct InstalledRecord {
+    std::string version;
+    std::string dir;            // last known install folder
+    bool        present = false;  // its folder currently exists on disk
+};
+
 class EngineRegistry {
 public:
     // Scan the engines dir for installed versions. If `dev_editor_exe` is a real
@@ -35,8 +44,21 @@ public:
     const EngineVersion* best() const;
     bool empty() const { return versions_.empty(); }
 
+    // Install history (versions ever installed, with a `present` flag set by the
+    // last scan()). Reconciled with what's actually on disk each scan.
+    const std::vector<InstalledRecord>& history() const { return history_; }
+    // History entries whose folder is no longer present ("were installed").
+    std::vector<InstalledRecord> previously_installed() const;
+
     // `%LOCALAPPDATA%/GameWorldshaper/Engines`
     static std::string engines_dir();
+
+    // ---- install history (persisted in engines_dir()/installed_versions.txt) ----
+    static std::string                  history_file();
+    static std::vector<InstalledRecord> load_history();
+    static void                         save_history(const std::vector<InstalledRecord>& h);
+    static void record_installed(const std::string& version, const std::string& dir);
+    static void forget_version(const std::string& version);   // drop a history entry
 
     // ---- install / update / remove (Phase 4) ----
     // Install (or overwrite = update) a version by copying an engine folder
@@ -51,7 +73,8 @@ public:
     static bool is_user_installed(const EngineVersion& v);
 
 private:
-    std::vector<EngineVersion> versions_;
+    std::vector<EngineVersion>   versions_;
+    std::vector<InstalledRecord> history_;
 };
 
 // Launch an engine version's editor, opening `project_manifest_path`.

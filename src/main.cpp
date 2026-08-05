@@ -84,14 +84,18 @@ static fs::path hub_config_dir() {
     return fs::path(".") / ".gameworldshaper";
 }
 
-// Delete the Hub's user data: every installed engine version + all persisted
-// config. (The Hub's own program files are handled separately below.)
-static void remove_hub_data() {
+// Delete the Hub's persisted config, and — only if `remove_engines` — every
+// installed engine version too. Keeping the engines lets a reinstalled Hub
+// rediscover them (and their install history). (The Hub's own program files are
+// handled separately below.)
+static void remove_hub_data(bool remove_engines) {
     std::error_code ec;
-    const fs::path engines = EngineRegistry::engines_dir();      // %LOCALAPPDATA%/.../Engines
-    fs::remove_all(engines, ec);
-    fs::remove(engines.parent_path(), ec);                       // %LOCALAPPDATA%/GameWorldshaper if empty
-    fs::remove_all(hub_config_dir(), ec);                        // %APPDATA%/GameWorldshaper
+    if (remove_engines) {
+        const fs::path engines = EngineRegistry::engines_dir();  // %LOCALAPPDATA%/.../Engines
+        fs::remove_all(engines, ec);
+        fs::remove(engines.parent_path(), ec);                   // %LOCALAPPDATA%/GameWorldshaper if empty
+    }
+    fs::remove_all(hub_config_dir(), ec);                        // %APPDATA%/GameWorldshaper (Hub config)
 }
 
 #ifdef _WIN32
@@ -143,11 +147,11 @@ static bool spawn_portable_selfdelete(std::string& err) {
     return true;
 }
 
-// Uninstall the Hub: remove its data, then run the NSIS uninstaller (installed)
-// or self-delete (portable). On success the caller closes the window so the exe
-// unlocks and the deletion can complete.
-static bool uninstall_hub(std::string& msg) {
-    remove_hub_data();
+// Uninstall the Hub: remove its data (optionally the engine versions too), then
+// run the NSIS uninstaller (installed) or self-delete (portable). On success the
+// caller closes the window so the exe unlocks and the deletion can complete.
+static bool uninstall_hub(std::string& msg, bool remove_engines) {
+    remove_hub_data(remove_engines);
     const fs::path un = find_uninstaller();
     if (!un.empty()) {
         if (!run_detached("\"" + un.string() + "\"", 0)) { msg = "Could not launch the uninstaller."; return false; }
@@ -158,8 +162,8 @@ static bool uninstall_hub(std::string& msg) {
     return true;
 }
 #else
-static bool uninstall_hub(std::string& msg) {
-    remove_hub_data();
+static bool uninstall_hub(std::string& msg, bool remove_engines) {
+    remove_hub_data(remove_engines);
     msg = "Removed Hub data. Delete the Hub folder manually on this platform.";
     return true;
 }
@@ -194,6 +198,12 @@ int main() {
     int        new_engine_idx = 0;
     int        sel_project = -1;
     std::string status;
+    {   // On launch, report what engine versions are installed / were installed.
+        size_t inst = 0; for (const auto& v : engines.versions()) if (!v.is_dev) ++inst;
+        const size_t prev = engines.previously_installed().size();
+        status = "Detected " + std::to_string(inst) + " installed engine version(s)"
+               + (prev ? ", " + std::to_string(prev) + " previously installed." : ".");
+    }
     char       install_src[512] = {0};   // engine folder to install
     char       install_ver[64]  = {0};   // version name to install as
     std::vector<RemoteVersion> remote_versions;  // last "Check for Updates" result
@@ -204,6 +214,7 @@ int main() {
     std::string engine_to_uninstall;             // pending engine-version uninstall (confirm modal)
     bool        open_engine_uninstall = false;
     bool        open_hub_uninstall    = false;
+    bool        also_remove_engines   = false;   // Hub-uninstall option: also wipe engine versions
     bool        should_close       = false;  // set once uninstall is launched -> close the window
     // Hub self-update state.
     bool          hub_update_checked = false;    // has "Check" run this session
@@ -327,7 +338,13 @@ int main() {
             // ---------------- Engine Versions ----------------
             if (ImGui::BeginTabItem("Engine Versions")) {
                 ImGui::TextDisabled("Installed under: %s", EngineRegistry::engines_dir().c_str());
+                const auto prev = engines.previously_installed();
+                {
+                    size_t inst = 0; for (const auto& v : engines.versions()) if (!v.is_dev) ++inst;
+                    ImGui::TextDisabled("%zu installed, %zu previously installed.", inst, prev.size());
+                }
                 ImGui::Separator();
+                ImGui::TextUnformatted("Installed");
                 if (engines.versions().empty())
                     ImGui::TextDisabled("No engine versions found.");
                 for (const auto& v : engines.versions()) {
@@ -342,6 +359,26 @@ int main() {
                         }
                     }
                     ImGui::PopID();
+                }
+
+                // Versions the Hub installed before but that aren't present now
+                // (removed, or an engine folder deleted outside the Hub).
+                if (!prev.empty()) {
+                    ImGui::Dummy(ImVec2(0, 6));
+                    ImGui::TextUnformatted("Previously installed");
+                    ImGui::TextDisabled("Recorded as installed once, not present now.");
+                    for (const auto& r : prev) {
+                        ImGui::PushID(("prev" + r.version).c_str());
+                        ImGui::BulletText("%s", r.version.c_str());
+                        if (!r.dir.empty()) { ImGui::SameLine(); ImGui::TextDisabled("   was: %s", r.dir.c_str()); }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Forget")) {
+                            EngineRegistry::forget_version(r.version);
+                            engines.scan(dev_editor);
+                            status = "Forgot previously-installed engine " + r.version + ".";
+                        }
+                        ImGui::PopID();
+                    }
                 }
 
                 ImGui::Dummy(ImVec2(0, 10));
@@ -485,24 +522,37 @@ int main() {
                 ImGui::Dummy(ImVec2(0, 12));
                 ImGui::Separator();
                 ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.35f, 1.0f), "Danger zone");
-                ImGui::TextDisabled("Uninstall removes all installed engine versions and the Hub's config,");
-                ImGui::TextDisabled("then removes the Hub itself. Your project folders are NOT touched.");
+                ImGui::TextDisabled("Uninstall removes the Hub and its config. It asks whether to also");
+                ImGui::TextDisabled("delete installed engine versions. Your project folders are NOT touched.");
                 ImGui::Dummy(ImVec2(0, 4));
-                if (ImGui::Button("Uninstall the Hub...", ImVec2(200, 0))) open_hub_uninstall = true;
+                if (ImGui::Button("Uninstall the Hub...", ImVec2(200, 0))) {
+                    also_remove_engines = false;   // default: keep the engines
+                    open_hub_uninstall  = true;
+                }
 
                 if (open_hub_uninstall) { ImGui::OpenPopup("Uninstall the Hub?"); open_hub_uninstall = false; }
                 if (ImGui::BeginPopupModal("Uninstall the Hub?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                    size_t engine_count = 0;
+                    for (const auto& v : engines.versions()) if (!v.is_dev) ++engine_count;
+
                     ImGui::TextUnformatted("This will:");
-                    ImGui::BulletText("delete all installed engine versions");
                     ImGui::BulletText("delete the Hub's saved config (repo, recent projects)");
                     ImGui::BulletText("%s", find_uninstaller().empty()
                                           ? "delete the Hub program files, then close"
                                           : "run the Hub uninstaller, then close");
+                    ImGui::Dummy(ImVec2(0, 4));
+                    ImGui::Checkbox("Also uninstall all installed engine versions", &also_remove_engines);
+                    if (also_remove_engines)
+                        ImGui::TextDisabled("   %zu installed engine version(s) + install history will be deleted.",
+                                            engine_count);
+                    else
+                        ImGui::TextDisabled("   %zu installed engine version(s) will be KEPT; a reinstalled Hub finds them.",
+                                            engine_count);
                     ImGui::TextDisabled("Your game projects on disk are left alone.");
                     ImGui::Separator();
                     if (ImGui::Button("Uninstall", ImVec2(120, 0))) {
                         std::string msg;
-                        if (uninstall_hub(msg)) { should_close = true; ImGui::CloseCurrentPopup(); }
+                        if (uninstall_hub(msg, also_remove_engines)) { should_close = true; ImGui::CloseCurrentPopup(); }
                         else { status = msg; ImGui::CloseCurrentPopup(); }
                     }
                     ImGui::SameLine();

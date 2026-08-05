@@ -76,8 +76,20 @@ int main(int argc, char** argv) {
         std::error_code ec;
         check("installed editor.exe present", fs::exists(dest / "editor.exe", ec));
 
+        // Install history: the install was recorded; it survives removal (so it
+        // shows as "previously installed"); forget clears it.
+        auto in_history = [&](const std::string& ver) {
+            auto h = EngineRegistry::load_history();
+            for (const auto& r : h) if (r.version == ver) return true;
+            return false;
+        };
+        check("install recorded in history", in_history(v[0].version));
+
         EngineRegistry::remove_installed_version(v[0].version, &err);
         check("cleanup removed it", !fs::exists(dest, ec));
+        check("history keeps the removed version (was-installed)", in_history(v[0].version));
+        EngineRegistry::forget_version(v[0].version);
+        check("forget_version drops it from history", !in_history(v[0].version));
     }
 
     // Real runs never touch the token; only mock mode set a fake one — undo that

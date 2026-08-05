@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(GameWorldshaperHub VERSION 0.1.1 LANGUAGES CXX)
+project(GameWorldshaperHub VERSION 0.1.2 LANGUAGES CXX)
 
 # ============================================================================
 # GameWorldshaper Hub — standalone launcher. Independent of the engine source
@@ -57,6 +57,11 @@ add_executable(GameWorldshaperHub src/main.cpp ${HUB_CORE} ${IMGUI_SOURCES})
 target_include_directories(GameWorldshaperHub PRIVATE
     src ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 target_compile_definitions(GameWorldshaperHub PRIVATE HUB_VERSION="${GWS_HUB_VERSION}")
+# GUI subsystem: no console/cmd window pops up when the Hub is launched. MinGW's
+# runtime still calls main(), so no WinMain is needed.
+if(WIN32)
+    set_target_properties(GameWorldshaperHub PROPERTIES WIN32_EXECUTABLE ON)
+endif()
 target_link_libraries(GameWorldshaperHub PRIVATE
     glfw spdlog::spdlog nlohmann_json::nlohmann_json)
 if(WIN32)
