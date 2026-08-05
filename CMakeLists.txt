@@ -9,6 +9,14 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+# The Hub's reported version. Defaults to the project() version, but the release
+# CI overrides it from the git tag (-DGWS_HUB_VERSION=x.y.z) so cutting a release
+# is just "tag vX.Y.Z" — no source edit. This drives both the compiled-in
+# hub_version() (self-update comparison) and the package/asset name.
+if(NOT DEFINED GWS_HUB_VERSION OR GWS_HUB_VERSION STREQUAL "")
+    set(GWS_HUB_VERSION "${PROJECT_VERSION}")
+endif()
+
 if(MINGW)
     add_compile_options(-Wa,-mbig-obj)   # harmless; matches the engine toolchain
 endif()
@@ -42,11 +50,13 @@ set(HUB_CORE
     src/engine_registry.cpp
     src/http_client.cpp
     src/update_feed.cpp
-    src/github_releases.cpp)
+    src/github_releases.cpp
+    src/self_update.cpp)
 
 add_executable(GameWorldshaperHub src/main.cpp ${HUB_CORE} ${IMGUI_SOURCES})
 target_include_directories(GameWorldshaperHub PRIVATE
     src ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+target_compile_definitions(GameWorldshaperHub PRIVATE HUB_VERSION="${GWS_HUB_VERSION}")
 target_link_libraries(GameWorldshaperHub PRIVATE
     glfw spdlog::spdlog nlohmann_json::nlohmann_json)
 if(WIN32)
@@ -58,6 +68,7 @@ endif()
 # remove) against a mock URL passed as argv[1].
 add_executable(hub_selftest tests/selftest.cpp ${HUB_CORE})
 target_include_directories(hub_selftest PRIVATE src)
+target_compile_definitions(hub_selftest PRIVATE HUB_VERSION="${GWS_HUB_VERSION}")
 target_link_libraries(hub_selftest PRIVATE spdlog::spdlog nlohmann_json::nlohmann_json)
 if(WIN32)
     target_link_libraries(hub_selftest PRIVATE winhttp)
@@ -79,7 +90,7 @@ install(TARGETS GameWorldshaperHub RUNTIME DESTINATION . COMPONENT hub)
 # --- Packaging: a Hub installer (ZIP always; NSIS when makensis is present) ---
 set(CPACK_PACKAGE_NAME "GameWorldshaperHub")
 set(CPACK_PACKAGE_VENDOR "GameWorldshaper")
-set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_VERSION "${GWS_HUB_VERSION}")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "GameWorldshaper Hub")
 set(CPACK_PACKAGE_EXECUTABLES "GameWorldshaperHub;GameWorldshaper Hub")
 # Package ONLY the "hub" component (exe + runtime DLLs) so FetchContent deps'
@@ -87,7 +98,7 @@ set(CPACK_PACKAGE_EXECUTABLES "GameWorldshaperHub;GameWorldshaper Hub")
 set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
 set(CPACK_COMPONENTS_ALL hub)
 set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
-set(CPACK_ARCHIVE_FILE_NAME "GameWorldshaperHub-${PROJECT_VERSION}-win64")
+set(CPACK_ARCHIVE_FILE_NAME "GameWorldshaperHub-${GWS_HUB_VERSION}-win64")
 if(WIN32)
     set(CPACK_GENERATOR "ZIP")
     find_program(GWS_MAKENSIS makensis)

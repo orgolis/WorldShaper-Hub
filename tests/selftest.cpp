@@ -5,6 +5,7 @@
 #include "github_releases.h"
 #include "update_feed.h"
 #include "engine_registry.h"
+#include "self_update.h"
 
 #include <spdlog/spdlog.h>
 
@@ -36,6 +37,25 @@ int main(int argc, char** argv) {
     const bool token_free = github_token().empty();
     std::cout << "  mode: " << (real ? "real GitHub" : "mock")
               << (token_free ? " (public, no token)" : " (authenticated)") << "\n";
+
+    // ---- Hub self-update: version comparison (pure logic) ----
+    check("hub_version() is set at build time", !hub_version().empty() && hub_version() != "0.0.0");
+    check("version_is_newer: 0.2.0 > 0.1.9",   version_is_newer("0.2.0", "0.1.9"));
+    check("version_is_newer: 0.1.10 > 0.1.9",  version_is_newer("0.1.10", "0.1.9"));
+    check("version_is_newer: equal is not newer", !version_is_newer("0.1.0", "0.1.0"));
+    check("version_is_newer: older is not newer", !version_is_newer("0.1.0", "0.2.0"));
+    check("version_is_newer: strips pre-release suffix", !version_is_newer("1.0.0-rc1", "1.0.0"));
+
+    if (real) {
+        // Live check against the actual Hub repo — must not error (found may be
+        // true or false depending on whether a Hub release is published yet).
+        RemoteVersion hv; bool hfound = false; std::string herr;
+        const bool hok = check_hub_update(hv, hfound, &herr);
+        check("check_hub_update queries the Hub repo without error", hok);
+        if (!hok) std::cout << "  (" << herr << ")\n";
+        std::cout << "  hub self-update: " << (hfound ? ("newer Hub " + hv.version + " available")
+                                                      : "up to date (or no Hub release yet)") << "\n";
+    }
 
     std::string err;
     std::vector<RemoteVersion> v;

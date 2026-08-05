@@ -158,6 +158,10 @@ bool download_and_install(const RemoteVersion& rv, std::string* err,
     return ok;
 }
 
+bool extract_zip(const std::string& zip, const std::string& dest, std::string* err) {
+    return extract_archive(zip, dest, err);
+}
+
 std::string feed_url() {
     std::ifstream in(config_dir() / "update_feed.txt");
     if (in) {

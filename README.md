@@ -51,6 +51,10 @@ cd build && cpack
 - **Uninstall an engine version** with the **Uninstall** button next to any
   user-installed version (the `dev` build and bundled versions aren't removable);
   a confirm dialog guards the delete.
+- **Update the Hub itself** from the **Settings** tab → *Hub*: **Check for Hub
+  Updates** reads the Hub's own repo releases (`orgolis/WorldShaper-Hub`); if a
+  newer version exists, **Update & Restart** downloads it and a helper swaps the
+  Hub files in place and relaunches (a running exe can't overwrite itself).
 - **Uninstall the Hub** from the **Settings** tab → *Danger zone*: it removes all
   installed engine versions and the Hub's config, then runs the installer's
   uninstaller (installed builds) or self-deletes the Hub files (portable). Your
@@ -94,7 +98,14 @@ These require a GitHub account and can't be done from a local build:
    personal-access-token (read access), pasted into the optional **Advanced**
    token field, which then authenticates both the releases API and the asset
    download.
-4. Optionally add CI to this repo to publish the Hub's own installer on release.
+4. **Release the Hub itself** (enables Hub self-update): this repo's
+   `.github/workflows/release-hub.yml` builds → CPacks the Hub `.zip` → uploads
+   it to the Release on a tag. **Cutting a release is just tagging** — the version
+   is taken from the tag (`-DGWS_HUB_VERSION`), so `git tag v0.1.1 && git push
+   --tags` publishes a Hub that reports `0.1.1`. Users then get it from
+   Settings → **Check for Hub Updates**. (Self-update finds nothing until the
+   first Hub release exists.)
 
 The `owner/repo` you enter is saved to
-`%APPDATA%\GameWorldshaper\github_repo.txt`.
+`%APPDATA%\GameWorldshaper\github_repo.txt`; the Hub's self-update repo defaults
+to `orgolis/WorldShaper-Hub` (override in `hub_repo.txt` in the same folder).

@@ -15,6 +15,7 @@
 #include "engine_registry.h"
 #include "update_feed.h"
 #include "github_releases.h"
+#include "self_update.h"
 
 #include <imgui.h>
 #include <backends/imgui_impl_glfw.h>
@@ -203,7 +204,12 @@ int main() {
     std::string engine_to_uninstall;             // pending engine-version uninstall (confirm modal)
     bool        open_engine_uninstall = false;
     bool        open_hub_uninstall    = false;
-    bool        hub_uninstalling       = false;  // set once uninstall is launched -> close the window
+    bool        should_close       = false;  // set once uninstall is launched -> close the window
+    // Hub self-update state.
+    bool          hub_update_checked = false;    // has "Check" run this session
+    bool          hub_update_found   = false;    // a newer Hub release exists
+    RemoteVersion hub_update;                    // the newer release (when found)
+    std::string   hub_update_msg;                // inline status for the Hub-update row
 
     auto open_project = [&](const std::string& manifest_path) {
         ProjectManifest pm;
@@ -446,6 +452,32 @@ int main() {
 
             // ---------------- Settings / Maintenance ----------------
             if (ImGui::BeginTabItem("Settings")) {
+                // ---- Hub self-update ----
+                ImGui::TextUnformatted("Hub");
+                ImGui::BulletText("This Hub: version %s   (%s)", hub_version().c_str(), hub_repo().c_str());
+                if (ImGui::Button("Check for Hub Updates")) {
+                    std::string e;
+                    hub_update_checked = true;
+                    if (check_hub_update(hub_update, hub_update_found, &e))
+                        hub_update_msg = hub_update_found ? ("Hub " + hub_update.version + " is available.")
+                                                          : "The Hub is up to date.";
+                    else { hub_update_found = false; hub_update_msg = "Hub update check failed: " + e; }
+                }
+                if (hub_update_found) {
+                    ImGui::SameLine();
+                    if (ImGui::Button(("Update to " + hub_update.version + " & Restart").c_str())) {
+                        std::string e;
+                        if (apply_hub_update(hub_update, &e,
+                                             [&](const std::string& m){ hub_update_msg = m; }))
+                            should_close = true;   // reuse the close-the-window flag; helper relaunches
+                        else hub_update_msg = "Update failed: " + e;
+                    }
+                }
+                if (hub_update_checked && !hub_update_msg.empty())
+                    ImGui::TextDisabled("%s", hub_update_msg.c_str());
+
+                ImGui::Dummy(ImVec2(0, 12));
+                ImGui::Separator();
                 ImGui::TextUnformatted("Locations");
                 ImGui::BulletText("Engine versions: %s", EngineRegistry::engines_dir().c_str());
                 ImGui::BulletText("Hub config:      %s", hub_config_dir().string().c_str());
@@ -470,7 +502,7 @@ int main() {
                     ImGui::Separator();
                     if (ImGui::Button("Uninstall", ImVec2(120, 0))) {
                         std::string msg;
-                        if (uninstall_hub(msg)) { hub_uninstalling = true; ImGui::CloseCurrentPopup(); }
+                        if (uninstall_hub(msg)) { should_close = true; ImGui::CloseCurrentPopup(); }
                         else { status = msg; ImGui::CloseCurrentPopup(); }
                     }
                     ImGui::SameLine();
@@ -485,7 +517,7 @@ int main() {
 
         // A launched Hub uninstall closes the app so the exe unlocks and the
         // uninstaller/self-delete helper can finish removing it.
-        if (hub_uninstalling) glfwSetWindowShouldClose(win, 1);
+        if (should_close) glfwSetWindowShouldClose(win, 1);
 
         if (!status.empty()) {
             ImGui::Separator();

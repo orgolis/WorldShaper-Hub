@@ -1,0 +1,77 @@
+# ============================================================================
+# Release the GameWorldshaper Hub package that the Hub's own self-update installs.
+#
+# On a version tag (v*), this builds the Hub with MinGW g++ + Ninja, runs
+# `cpack -G ZIP` to produce GameWorldshaperHub-<ver>-win64.zip (the Hub exe +
+# runtime DLLs at the root), and uploads it as an asset on the GitHub Release for
+# the tag. The Hub's Settings -> "Check for Hub Updates" reads these releases and
+# self-updates.
+#
+# Cutting a release is just tagging: the version is taken from the tag via
+# -DGWS_HUB_VERSION, so the built Hub reports it (hub_version()) and the asset is
+# named for it — no source edit needed. Bump by tagging, e.g. `git tag v0.1.1`.
+#
+# NOTE: the SHAPE is correct but CI has never run this; validate the toolchain on
+# the first real tag. (The Hub build is simple — GLFW + legacy GL + ImGui via
+# FetchContent, no Vulkan/Jolt — so it should be far less fragile than the engine.)
+# ============================================================================
+name: Release Hub
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}   # allow manual build validation from the Actions tab
+
+permissions:
+  contents: write         # needed to create/attach release assets
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}   # MinGW g++/ninja live in the MSYS2 environment
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MinGW toolchain (g++, cmake, ninja)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Derive version from the tag
+        run: echo "HUB_VER=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+            -DGWS_HUB_VERSION="${HUB_VER}"
+
+      - name: Build the Hub
+        run: cmake --build build --target GameWorldshaperHub -j
+
+      - name: Package (CPack ZIP)
+        run: cd build && cpack -G ZIP
+
+      - name: Stage the asset
+        run: |
+          mkdir -p dist
+          cp build/GameWorldshaperHub-*-win64.zip "dist/GameWorldshaperHub-${HUB_VER}-win64.zip"
+          ls -la dist
+
+      - name: Upload to the GitHub Release
+        shell: pwsh
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/GameWorldshaperHub-*-win64.zip
+          fail_on_unmatched_files: true

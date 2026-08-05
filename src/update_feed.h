@@ -42,4 +42,8 @@ bool download_and_install(const RemoteVersion& rv, std::string* err = nullptr,
 std::string feed_url();
 void        set_feed_url(const std::string& url);
 
+// Extract a .zip into `dest` (OS bsdtar, else PowerShell Expand-Archive). Exposed
+// so the self-updater can reuse the same robust extraction.
+bool extract_zip(const std::string& zip, const std::string& dest, std::string* err = nullptr);
+
 } // namespace schizo::project
