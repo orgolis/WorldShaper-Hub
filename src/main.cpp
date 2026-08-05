@@ -25,6 +25,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <shlobj.h>
+#include <shellapi.h>   // ShellExecuteA (elevated uninstaller launch)
 #endif
 
 #include <algorithm>
@@ -147,16 +148,28 @@ static bool spawn_portable_selfdelete(std::string& err) {
     return true;
 }
 
-// Uninstall the Hub: remove its data (optionally the engine versions too), then
-// run the NSIS uninstaller (installed) or self-delete (portable). On success the
-// caller closes the window so the exe unlocks and the deletion can complete.
+// Uninstall the Hub: run the NSIS uninstaller (installed) or self-delete
+// (portable), then remove its data. On success the caller closes the window so
+// the exe unlocks and the deletion can complete.
 static bool uninstall_hub(std::string& msg, bool remove_engines) {
-    remove_hub_data(remove_engines);
     const fs::path un = find_uninstaller();
     if (!un.empty()) {
-        if (!run_detached("\"" + un.string() + "\"", 0)) { msg = "Could not launch the uninstaller."; return false; }
+        // The NSIS uninstaller is manifested requireAdministrator (the Hub installs
+        // to Program Files), so it must be launched via ShellExecute with "runas"
+        // to trigger UAC elevation. CreateProcess can't elevate — it would fail
+        // with ERROR_ELEVATION_REQUIRED, which is why the button did nothing.
+        const std::string exe = un.string();
+        const std::string dir = un.parent_path().string();
+        HINSTANCE h = ShellExecuteA(nullptr, "runas", exe.c_str(), nullptr, dir.c_str(), SW_SHOWNORMAL);
+        if (reinterpret_cast<INT_PTR>(h) <= 32) {
+            msg = "Uninstaller was not started (elevation cancelled). Nothing was removed.";
+            return false;   // user declined UAC -> leave everything intact
+        }
+        remove_hub_data(remove_engines);   // user-writable dirs; only after elevation succeeded
         return true;
     }
+    // Portable (no installer): self-delete the files in place.
+    remove_hub_data(remove_engines);
     std::string err;
     if (!spawn_portable_selfdelete(err)) { msg = err; return false; }
     return true;
