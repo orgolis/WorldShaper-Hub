@@ -76,7 +76,7 @@ target_include_directories(hub_selftest PRIVATE src)
 target_compile_definitions(hub_selftest PRIVATE HUB_VERSION="${GWS_HUB_VERSION}")
 target_link_libraries(hub_selftest PRIVATE spdlog::spdlog nlohmann_json::nlohmann_json)
 if(WIN32)
-    target_link_libraries(hub_selftest PRIVATE winhttp)
+    target_link_libraries(hub_selftest PRIVATE winhttp shell32)  # shell32: self_update ShellExecute
 endif()
 
 # Bundle the MinGW runtime DLLs next to the exe so it runs on a clean box.

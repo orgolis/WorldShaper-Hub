@@ -15,6 +15,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <shellapi.h>   // ShellExecuteA (elevated swap when Program Files)
 #endif
 
 namespace fs = std::filesystem;
@@ -43,6 +44,17 @@ std::vector<long> version_parts(const std::string& v) {
 }
 
 #ifdef _WIN32
+// Can we create files in `dir`? (Program Files is not writable without admin.)
+bool dir_writable(const fs::path& dir) {
+    std::error_code ec;
+    const fs::path probe = dir / ".gws_write_test.tmp";
+    std::ofstream f(probe);
+    const bool ok = f.is_open();
+    f.close();
+    if (ok) fs::remove(probe, ec);
+    return ok;
+}
+
 bool spawn_detached(const std::string& cmdline) {
     std::string cmd = cmdline;                      // CreateProcessA may modify it
     STARTUPINFOA si{}; si.cb = sizeof(si);
@@ -168,14 +180,28 @@ bool apply_hub_update(const RemoteVersion& rv, std::string* err,
     b << "copy /y \"" << newexe.string() << "\" \"" << dstexe.string() << "\" >nul 2>&1\r\n";
     b << "if errorlevel 1 ( ping -n 2 127.0.0.1 >nul & goto copyexe )\r\n";
     b << "xcopy /y /e \"" << newdir.string() << "\\*\" \"" << install.string() << "\\\" >nul 2>&1\r\n";
-    b << "start \"\" \"" << dstexe.string() << "\"\r\n";
+    // Relaunch via explorer so the updated Hub runs at normal integrity even when
+    // this helper was elevated (a Program Files swap), i.e. never left running as admin.
+    b << "explorer.exe \"" << dstexe.string() << "\"\r\n";
     b << "rmdir /s /q \"" << tmp.string() << "\" >nul 2>&1\r\n";
     b << "del \"%~f0\" >nul 2>&1\r\n";
     b.close();
 
     note("Restarting to apply the update...");
-    if (!spawn_detached("cmd.exe /c \"" + bat.string() + "\"")) {
-        if (err) *err = "could not launch the update helper";
+    const std::string batcmd = "cmd.exe /c \"" + bat.string() + "\"";
+    bool launched = false;
+    if (dir_writable(install)) {
+        launched = spawn_detached(batcmd);
+    } else {
+        // Protected location (e.g. Program Files): the swap needs admin, so run the
+        // helper elevated via ShellExecute "runas" (a UAC prompt appears).
+        const std::string params = "/c \"" + bat.string() + "\"";
+        HINSTANCE h = ShellExecuteA(nullptr, "runas", "cmd.exe", params.c_str(), nullptr, SW_HIDE);
+        launched = reinterpret_cast<INT_PTR>(h) > 32;
+        if (!launched && err) *err = "update needs administrator (elevation was declined)";
+    }
+    if (!launched) {
+        if (err && err->empty()) *err = "could not launch the update helper";
         fs::remove_all(tmp, ec);
         return false;
     }
