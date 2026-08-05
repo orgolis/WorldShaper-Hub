@@ -28,8 +28,10 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace fs = std::filesystem;
@@ -71,6 +73,97 @@ static void draw_feature_checklist(FeatureSet& features) {
 
 static void glfw_error(int e, const char* d) { std::fprintf(stderr, "GLFW %d: %s\n", e, d); }
 
+// ---- Hub uninstall ---------------------------------------------------------
+// %APPDATA%/GameWorldshaper — where the Hub persists repo/token/recent-projects.
+static fs::path hub_config_dir() {
+#ifdef _WIN32
+    if (const char* ad = std::getenv("APPDATA")) return fs::path(ad) / "GameWorldshaper";
+#endif
+    if (const char* hp = std::getenv("USERPROFILE")) return fs::path(hp) / ".gameworldshaper";
+    return fs::path(".") / ".gameworldshaper";
+}
+
+// Delete the Hub's user data: every installed engine version + all persisted
+// config. (The Hub's own program files are handled separately below.)
+static void remove_hub_data() {
+    std::error_code ec;
+    const fs::path engines = EngineRegistry::engines_dir();      // %LOCALAPPDATA%/.../Engines
+    fs::remove_all(engines, ec);
+    fs::remove(engines.parent_path(), ec);                       // %LOCALAPPDATA%/GameWorldshaper if empty
+    fs::remove_all(hub_config_dir(), ec);                        // %APPDATA%/GameWorldshaper
+}
+
+#ifdef _WIN32
+// NSIS (CPack) drops an uninstaller next to the Hub when installed; portable ZIP
+// runs have none.
+static fs::path find_uninstaller() {
+    const fs::path dir = fs::path(this_executable_path()).parent_path();
+    std::error_code ec;
+    for (const char* n : { "Uninstall.exe", "uninstall.exe" })
+        if (fs::exists(dir / n, ec)) return dir / n;
+    return {};
+}
+
+static bool run_detached(std::string command_line, DWORD flags) {
+    STARTUPINFOA si{}; si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    if (!CreateProcessA(nullptr, command_line.data(), nullptr, nullptr, FALSE,
+                        flags, nullptr, nullptr, &si, &pi))
+        return false;
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return true;
+}
+
+// A running exe can't delete itself, so for a portable install spawn a detached
+// cmd that waits for this process to exit, then deletes the Hub exe + its bundled
+// MinGW DLLs and removes the folder if it becomes empty.
+static bool spawn_portable_selfdelete(std::string& err) {
+    const fs::path exe = this_executable_path();
+    const fs::path dir = exe.parent_path();
+    const char* tmp = std::getenv("TEMP"); if (!tmp) tmp = std::getenv("TMP");
+    const fs::path bat = fs::path(tmp ? tmp : ".") / "gws_hub_uninstall.bat";
+    std::ofstream b(bat, std::ios::binary);
+    if (!b) { err = "could not write the uninstall helper"; return false; }
+    auto del = [&](const fs::path& p) { b << "del \"" << p.string() << "\" >nul 2>&1\r\n"; };
+    b << "@echo off\r\n:wait\r\n";
+    b << "del \"" << exe.string() << "\" >nul 2>&1\r\n";
+    b << "if exist \"" << exe.string() << "\" ( ping -n 2 127.0.0.1 >nul & goto wait )\r\n";
+    del(dir / "libgcc_s_seh-1.dll");
+    del(dir / "libstdc++-6.dll");
+    del(dir / "libwinpthread-1.dll");
+    b << "rmdir \"" << dir.string() << "\" >nul 2>&1\r\n";
+    b << "del \"%~f0\" >nul 2>&1\r\n";
+    b.close();
+    if (!run_detached("cmd.exe /c \"" + bat.string() + "\"", CREATE_NO_WINDOW | DETACHED_PROCESS)) {
+        err = "could not launch the uninstall helper";
+        return false;
+    }
+    return true;
+}
+
+// Uninstall the Hub: remove its data, then run the NSIS uninstaller (installed)
+// or self-delete (portable). On success the caller closes the window so the exe
+// unlocks and the deletion can complete.
+static bool uninstall_hub(std::string& msg) {
+    remove_hub_data();
+    const fs::path un = find_uninstaller();
+    if (!un.empty()) {
+        if (!run_detached("\"" + un.string() + "\"", 0)) { msg = "Could not launch the uninstaller."; return false; }
+        return true;
+    }
+    std::string err;
+    if (!spawn_portable_selfdelete(err)) { msg = err; return false; }
+    return true;
+}
+#else
+static bool uninstall_hub(std::string& msg) {
+    remove_hub_data();
+    msg = "Removed Hub data. Delete the Hub folder manually on this platform.";
+    return true;
+}
+#endif
+
 int main() {
     glfwSetErrorCallback(glfw_error);
     if (!glfwInit()) return 1;
@@ -107,6 +200,10 @@ int main() {
     { std::string r = github_repo(); std::snprintf(repo_buf, sizeof(repo_buf), "%s", r.c_str()); }
     char       token_buf[256] = {0};             // GitHub token for private repos
     { std::string t = github_token(); std::snprintf(token_buf, sizeof(token_buf), "%s", t.c_str()); }
+    std::string engine_to_uninstall;             // pending engine-version uninstall (confirm modal)
+    bool        open_engine_uninstall = false;
+    bool        open_hub_uninstall    = false;
+    bool        hub_uninstalling       = false;  // set once uninstall is launched -> close the window
 
     auto open_project = [&](const std::string& manifest_path) {
         ProjectManifest pm;
@@ -233,12 +330,9 @@ int main() {
                     ImGui::SameLine(); ImGui::TextDisabled("   %s", v.editor_exe.c_str());
                     if (EngineRegistry::is_user_installed(v)) {
                         ImGui::SameLine();
-                        if (ImGui::SmallButton("Remove")) {
-                            std::string err;
-                            if (EngineRegistry::remove_installed_version(v.version, &err)) {
-                                status = "Removed engine " + v.version + ".";
-                                engines.scan(dev_editor);
-                            } else status = "Remove failed: " + err;
+                        if (ImGui::SmallButton("Uninstall")) {
+                            engine_to_uninstall  = v.version;
+                            open_engine_uninstall = true;   // confirm before deleting
                         }
                     }
                     ImGui::PopID();
@@ -327,11 +421,71 @@ int main() {
 
                 ImGui::Dummy(ImVec2(0, 8));
                 if (ImGui::Button("Rescan")) engines.scan(dev_editor);
+
+                // Confirm modal for uninstalling an engine version.
+                if (open_engine_uninstall) { ImGui::OpenPopup("Uninstall engine version?"); open_engine_uninstall = false; }
+                if (ImGui::BeginPopupModal("Uninstall engine version?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                    ImGui::Text("Permanently delete engine version \"%s\"?", engine_to_uninstall.c_str());
+                    ImGui::TextDisabled("Removes its files under %s.", EngineRegistry::engines_dir().c_str());
+                    ImGui::TextDisabled("Projects bound to it will fall back to another installed version.");
+                    ImGui::Separator();
+                    if (ImGui::Button("Uninstall", ImVec2(120, 0))) {
+                        std::string err;
+                        if (EngineRegistry::remove_installed_version(engine_to_uninstall, &err)) {
+                            status = "Uninstalled engine " + engine_to_uninstall + ".";
+                            engines.scan(dev_editor);
+                        } else status = "Uninstall failed: " + err;
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Cancel", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+                    ImGui::EndPopup();
+                }
+                ImGui::EndTabItem();
+            }
+
+            // ---------------- Settings / Maintenance ----------------
+            if (ImGui::BeginTabItem("Settings")) {
+                ImGui::TextUnformatted("Locations");
+                ImGui::BulletText("Engine versions: %s", EngineRegistry::engines_dir().c_str());
+                ImGui::BulletText("Hub config:      %s", hub_config_dir().string().c_str());
+
+                ImGui::Dummy(ImVec2(0, 12));
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.35f, 1.0f), "Danger zone");
+                ImGui::TextDisabled("Uninstall removes all installed engine versions and the Hub's config,");
+                ImGui::TextDisabled("then removes the Hub itself. Your project folders are NOT touched.");
+                ImGui::Dummy(ImVec2(0, 4));
+                if (ImGui::Button("Uninstall the Hub...", ImVec2(200, 0))) open_hub_uninstall = true;
+
+                if (open_hub_uninstall) { ImGui::OpenPopup("Uninstall the Hub?"); open_hub_uninstall = false; }
+                if (ImGui::BeginPopupModal("Uninstall the Hub?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                    ImGui::TextUnformatted("This will:");
+                    ImGui::BulletText("delete all installed engine versions");
+                    ImGui::BulletText("delete the Hub's saved config (repo, recent projects)");
+                    ImGui::BulletText("%s", find_uninstaller().empty()
+                                          ? "delete the Hub program files, then close"
+                                          : "run the Hub uninstaller, then close");
+                    ImGui::TextDisabled("Your game projects on disk are left alone.");
+                    ImGui::Separator();
+                    if (ImGui::Button("Uninstall", ImVec2(120, 0))) {
+                        std::string msg;
+                        if (uninstall_hub(msg)) { hub_uninstalling = true; ImGui::CloseCurrentPopup(); }
+                        else { status = msg; ImGui::CloseCurrentPopup(); }
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Cancel", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+                    ImGui::EndPopup();
+                }
                 ImGui::EndTabItem();
             }
 
             ImGui::EndTabBar();
         }
+
+        // A launched Hub uninstall closes the app so the exe unlocks and the
+        // uninstaller/self-delete helper can finish removing it.
+        if (hub_uninstalling) glfwSetWindowShouldClose(win, 1);
 
         if (!status.empty()) {
             ImGui::Separator();

@@ -48,6 +48,13 @@ cd build && cpack
   Hub reads the repo's releases and downloads + extracts + installs the engine
   `.zip` asset from any release you pick. (A token is only needed if you point it
   at a *private* engine repo — see the optional "Advanced" field.)
+- **Uninstall an engine version** with the **Uninstall** button next to any
+  user-installed version (the `dev` build and bundled versions aren't removable);
+  a confirm dialog guards the delete.
+- **Uninstall the Hub** from the **Settings** tab → *Danger zone*: it removes all
+  installed engine versions and the Hub's config, then runs the installer's
+  uninstaller (installed builds) or self-deletes the Hub files (portable). Your
+  project folders on disk are left untouched.
 
 ---
 
