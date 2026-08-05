@@ -238,9 +238,17 @@ int main() {
     auto open_project = [&](const std::string& manifest_path) {
         ProjectManifest pm;
         if (!ProjectManifest::load(manifest_path, pm)) { status = "Failed to read project."; return; }
+        // A project opens ONLY in its bound engine version — no silent fallback to
+        // the newest installed one (a scene authored for one version can break in
+        // another). If it isn't installed, tell the user to install it or change
+        // the project's engine version (both available in the UI).
         const EngineVersion* ev = engines.find(pm.engine_version);
-        if (!ev) ev = engines.best();
-        if (!ev) { status = "No engine version available."; return; }
+        if (!ev) {
+            status = "Project '" + pm.name + "' needs engine version " + pm.engine_version +
+                     ", which is not installed. Install it in Engine Versions, or change the "
+                     "project's engine version below.";
+            return;
+        }
         if (launch_editor(*ev, manifest_path)) {
             projects.add(RecentProject{pm.name, manifest_path}); projects.save();
             status = "Launched '" + pm.name + "' in engine " + ev->version + ".";
@@ -288,7 +296,10 @@ int main() {
                     ProjectManifest pm;
                     if (exists && ProjectManifest::load(it.manifest_path, pm)) {
                         ImGui::SameLine();
-                        ImGui::TextDisabled("   engine %s", pm.engine_version.c_str());
+                        const bool have = engines.find(pm.engine_version) != nullptr;
+                        if (have) ImGui::TextDisabled("   engine %s", pm.engine_version.c_str());
+                        else      ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.35f, 1.0f),
+                                                     "   engine %s (not installed)", pm.engine_version.c_str());
                     }
                     ImGui::PopID();
                 }
@@ -303,6 +314,38 @@ int main() {
                 if (ImGui::Button("Remove from list", ImVec2(150, 0)) &&
                     sel_project >= 0 && sel_project < (int)items.size()) {
                     projects.remove(items[sel_project].manifest_path); projects.save(); sel_project = -1;
+                }
+
+                // Selected project: bound engine version + a control to change it.
+                if (can) {
+                    const std::string& mpath = items[sel_project].manifest_path;
+                    ProjectManifest pm;
+                    if (ProjectManifest::load(mpath, pm)) {
+                        const bool have = engines.find(pm.engine_version) != nullptr;
+                        ImGui::Dummy(ImVec2(0, 6));
+                        ImGui::Separator();
+                        ImGui::Text("Bound engine version: %s", pm.engine_version.c_str());
+                        ImGui::SameLine();
+                        if (have) ImGui::TextDisabled("(installed)");
+                        else      ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.35f, 1.0f),
+                                                     "(NOT installed — install it, or change it below)");
+                        ImGui::SetNextItemWidth(220);
+                        if (ImGui::BeginCombo("Change engine version", pm.engine_version.c_str())) {
+                            for (const auto& v : engines.versions()) {
+                                const bool seld = (v.version == pm.engine_version);
+                                std::string lbl = v.version + (v.is_dev ? "  (dev)" : "");
+                                if (ImGui::Selectable(lbl.c_str(), seld) && !seld) {
+                                    pm.engine_version = v.version;
+                                    if (ProjectManifest::save(mpath, pm))
+                                        status = "Set '" + pm.name + "' to engine " + v.version + ".";
+                                    else
+                                        status = "Could not update the project file.";
+                                }
+                            }
+                            ImGui::EndCombo();
+                        }
+                        ImGui::TextDisabled("Only installed versions are listed. A project opens only in its bound version.");
+                    }
                 }
                 ImGui::EndTabItem();
             }
