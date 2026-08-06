@@ -345,6 +345,21 @@ int main() {
                             ImGui::EndCombo();
                         }
                         ImGui::TextDisabled("Only installed versions are listed. A project opens only in its bound version.");
+
+                        // Modules: toggle which engine systems this project uses.
+                        // Written to project.schizo (runtime config) — no rebuild.
+                        ImGui::Dummy(ImVec2(0, 6));
+                        ImGui::Separator();
+                        ImGui::Text("Modules");
+                        ImGui::TextDisabled("Toggle engine systems this project uses (saved to project.schizo; no rebuild needed).");
+                        const auto before_mask = pm.features.raw();
+                        draw_feature_checklist(pm.features);
+                        if (pm.features.raw() != before_mask) {
+                            if (ProjectManifest::save(mpath, pm))
+                                status = "Updated modules for '" + pm.name + "'.";
+                            else
+                                status = "Could not update the project file.";
+                        }
                     }
                 }
                 ImGui::EndTabItem();
