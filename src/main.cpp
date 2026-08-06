@@ -279,8 +279,9 @@ int main() {
         if (ImGui::BeginTabBar("hub_tabs")) {
             // ---------------- Projects ----------------
             if (ImGui::BeginTabItem("Projects")) {
-                ImGui::TextDisabled("Double-click a project to open it in its engine version.");
-                ImGui::BeginChild("projlist", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 1.5f), true);
+                ImGui::TextDisabled("Double-click a project to open it. Select one to change its engine version or modules below.");
+                const float proj_list_h = ImGui::GetContentRegionAvail().y * 0.40f;
+                ImGui::BeginChild("projlist", ImVec2(0, proj_list_h), true);
                 const auto& items = projects.items();
                 for (int i = 0; i < (int)items.size(); ++i) {
                     const auto& it = items[i];
@@ -315,6 +316,15 @@ int main() {
                     sel_project >= 0 && sel_project < (int)items.size()) {
                     projects.remove(items[sel_project].manifest_path); projects.save(); sel_project = -1;
                 }
+
+                // Per-project settings live in their OWN scrollable region so the
+                // engine-version + modules controls are never clipped off the
+                // bottom of the fixed-size window.
+                ImGui::Dummy(ImVec2(0, 4));
+                ImGui::BeginChild("projdetail",
+                                  ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 1.5f), true);
+                if (!can)
+                    ImGui::TextDisabled("Select a project above to change its engine version or toggle its modules.");
 
                 // Selected project: bound engine version + a control to change it.
                 if (can) {
@@ -362,6 +372,7 @@ int main() {
                         }
                     }
                 }
+                ImGui::EndChild();   // projdetail
                 ImGui::EndTabItem();
             }
 
