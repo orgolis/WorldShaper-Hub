@@ -26,6 +26,7 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <shellapi.h>   // ShellExecuteA (elevated uninstaller launch)
+#include <shobjidl.h>   // IFileOpenDialog (modern native folder picker)
 #endif
 
 #include <algorithm>
@@ -39,18 +40,42 @@
 namespace fs = std::filesystem;
 using namespace schizo::project;
 
-// ---- native folder picker (Windows) ----
+// ---- native folder picker (modern Windows Explorer dialog) ----
 static std::string browse_folder(const char* title) {
 #ifdef _WIN32
-    char path[MAX_PATH] = {0};
-    BROWSEINFOA bi{};
-    bi.lpszTitle = title;
-    bi.ulFlags   = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-    LPITEMIDLIST pidl = SHBrowseForFolderA(&bi);
-    if (pidl) { SHGetPathFromIDListA(pidl, path); CoTaskMemFree(pidl); return path; }
-#endif
+    std::string result;
+    const HRESULT co = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    const bool did_init = SUCCEEDED(co);
+    IFileOpenDialog* dlg = nullptr;
+    if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                   IID_IFileOpenDialog, reinterpret_cast<void**>(&dlg))) && dlg) {
+        DWORD opts = 0;
+        dlg->GetOptions(&opts);
+        dlg->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
+        if (title) {
+            const int wlen = MultiByteToWideChar(CP_UTF8, 0, title, -1, nullptr, 0);
+            if (wlen > 0) { std::wstring wt(static_cast<size_t>(wlen), L'\0'); MultiByteToWideChar(CP_UTF8, 0, title, -1, wt.data(), wlen); dlg->SetTitle(wt.c_str()); }
+        }
+        if (SUCCEEDED(dlg->Show(nullptr))) {
+            IShellItem* item = nullptr;
+            if (SUCCEEDED(dlg->GetResult(&item)) && item) {
+                PWSTR pw = nullptr;
+                if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &pw)) && pw) {
+                    const int n = WideCharToMultiByte(CP_UTF8, 0, pw, -1, nullptr, 0, nullptr, nullptr);
+                    if (n > 1) { std::string s(static_cast<size_t>(n - 1), '\0'); WideCharToMultiByte(CP_UTF8, 0, pw, -1, s.data(), n, nullptr, nullptr); result = s; }
+                    CoTaskMemFree(pw);
+                }
+                item->Release();
+            }
+        }
+        dlg->Release();
+    }
+    if (did_init) CoUninitialize();
+    return result;
+#else
     (void)title;
     return {};
+#endif
 }
 
 // ---- inline feature checklist (with dependency handling) ----
@@ -314,7 +339,40 @@ int main() {
                 ImGui::SameLine();
                 if (ImGui::Button("Remove from list", ImVec2(150, 0)) &&
                     sel_project >= 0 && sel_project < (int)items.size()) {
+                    // remove() takes the path BY VALUE, so passing a reference into the
+                    // vector it erases is safe (this used to crash the whole Hub).
                     projects.remove(items[sel_project].manifest_path); projects.save(); sel_project = -1;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Add Existing Project...", ImVec2(200, 0))) {
+                    std::string folder = browse_folder("Choose an existing project folder");
+                    if (!folder.empty()) {
+                        // Seed a fresh manifest with the newest installed engine
+                        // version (else the newest dev build, else the default).
+                        std::string ver;
+                        for (const auto& v : engines.versions()) if (!v.is_dev) { ver = v.version; break; }
+                        if (ver.empty() && !engines.versions().empty()) ver = engines.versions().front().version;
+
+                        std::string mpath, name;
+                        if (import_existing_project(folder, ver, mpath, name)) {
+                            // Keep display names unique. Only rename when the name
+                            // collides with a DIFFERENT project already in the list.
+                            bool collides = false;
+                            for (const auto& it2 : projects.items())
+                                if (it2.name == name && it2.manifest_path != mpath) { collides = true; break; }
+                            if (collides) {
+                                std::string uniq = projects.unique_name(name);
+                                ProjectManifest pm;
+                                if (ProjectManifest::load(mpath, pm)) { pm.name = uniq; ProjectManifest::save(mpath, pm); }
+                                name = uniq;
+                            }
+                            projects.add(RecentProject{name, mpath}); projects.save();
+                            sel_project = 0;
+                            status = "Added project '" + name + "'. Any missing folders were created.";
+                        } else {
+                            status = "Could not add that folder as a project.";
+                        }
+                    }
                 }
 
                 // Per-project settings live in their OWN scrollable region so the
@@ -408,10 +466,15 @@ int main() {
                 const bool can = std::strlen(new_name) > 0 && std::strlen(new_loc) > 0 && !evs.empty();
                 ImGui::BeginDisabled(!can);
                 if (ImGui::Button("Create & Open", ImVec2(150, 0)) && can) {
-                    std::string ver = evs[std::min(new_engine_idx, (int)evs.size()-1)].version;
-                    std::string mpath;
-                    if (create_project(new_loc, new_name, new_features, mpath, ver)) open_project(mpath);
-                    else status = "Could not create the project (name taken or path not writable?).";
+                    if (projects.name_exists(new_name)) {
+                        status = "A project named '" + std::string(new_name) +
+                                 "' already exists — choose a unique name.";
+                    } else {
+                        std::string ver = evs[std::min(new_engine_idx, (int)evs.size()-1)].version;
+                        std::string mpath;
+                        if (create_project(new_loc, new_name, new_features, mpath, ver)) open_project(mpath);
+                        else status = "Could not create the project (folder exists/not empty, or path not writable?).";
+                    }
                 }
                 ImGui::EndDisabled();
                 ImGui::EndTabItem();
@@ -463,37 +526,7 @@ int main() {
                     }
                 }
 
-                ImGui::Dummy(ImVec2(0, 10));
-                ImGui::Separator();
-                ImGui::TextUnformatted("Install / Update a version");
-                ImGui::TextDisabled("Point to an engine folder (contains editor.exe) — e.g. an unpacked "
-                                    "package's Engines/<version> dir. Same version name = update.");
-                ImGui::SetNextItemWidth(340);
-                ImGui::InputText("Folder", install_src, sizeof(install_src));
-                ImGui::SameLine();
-                if (ImGui::Button("Browse...##inst")) {
-                    std::string p = browse_folder("Choose an engine folder (with editor.exe)");
-                    if (!p.empty()) {
-                        std::snprintf(install_src, sizeof(install_src), "%s", p.c_str());
-                        std::string base = fs::path(p).filename().string();
-                        if (base.empty()) base = fs::path(p).parent_path().filename().string();
-                        std::snprintf(install_ver, sizeof(install_ver), "%s", base.c_str());
-                    }
-                }
-                ImGui::SetNextItemWidth(340);
-                ImGui::InputText("Version name", install_ver, sizeof(install_ver));
-                const bool can_install = std::strlen(install_src) > 0 && std::strlen(install_ver) > 0;
-                ImGui::BeginDisabled(!can_install);
-                if (ImGui::Button("Install / Update", ImVec2(160, 0)) && can_install) {
-                    std::string err;
-                    if (EngineRegistry::install_version(install_src, install_ver, &err)) {
-                        status = "Installed engine " + std::string(install_ver) + ".";
-                        engines.scan(dev_editor);
-                        install_src[0] = '\0'; install_ver[0] = '\0';
-                    } else status = "Install failed: " + err;
-                }
-                ImGui::EndDisabled();
-
+                // --- Remote updates FIRST (the recommended path) ---
                 ImGui::Dummy(ImVec2(0, 10));
                 ImGui::Separator();
                 ImGui::TextUnformatted("Remote updates (GitHub Releases)");
@@ -543,6 +576,38 @@ int main() {
                         ImGui::PopID();
                     }
                 }
+
+                // --- Manual install SECOND (advanced / offline path) ---
+                ImGui::Dummy(ImVec2(0, 10));
+                ImGui::Separator();
+                ImGui::TextUnformatted("Install / Update a version manually");
+                ImGui::TextDisabled("Advanced / offline: point to an engine folder (contains editor.exe) — e.g. an "
+                                    "unpacked package's Engines/<version> dir. Same version name = update.");
+                ImGui::SetNextItemWidth(340);
+                ImGui::InputText("Folder", install_src, sizeof(install_src));
+                ImGui::SameLine();
+                if (ImGui::Button("Browse...##inst")) {
+                    std::string p = browse_folder("Choose an engine folder (with editor.exe)");
+                    if (!p.empty()) {
+                        std::snprintf(install_src, sizeof(install_src), "%s", p.c_str());
+                        std::string base = fs::path(p).filename().string();
+                        if (base.empty()) base = fs::path(p).parent_path().filename().string();
+                        std::snprintf(install_ver, sizeof(install_ver), "%s", base.c_str());
+                    }
+                }
+                ImGui::SetNextItemWidth(340);
+                ImGui::InputText("Version name", install_ver, sizeof(install_ver));
+                const bool can_install = std::strlen(install_src) > 0 && std::strlen(install_ver) > 0;
+                ImGui::BeginDisabled(!can_install);
+                if (ImGui::Button("Install / Update", ImVec2(160, 0)) && can_install) {
+                    std::string err;
+                    if (EngineRegistry::install_version(install_src, install_ver, &err)) {
+                        status = "Installed engine " + std::string(install_ver) + ".";
+                        engines.scan(dev_editor);
+                        install_src[0] = '\0'; install_ver[0] = '\0';
+                    } else status = "Install failed: " + err;
+                }
+                ImGui::EndDisabled();
 
                 ImGui::Dummy(ImVec2(0, 8));
                 if (ImGui::Button("Rescan")) engines.scan(dev_editor);

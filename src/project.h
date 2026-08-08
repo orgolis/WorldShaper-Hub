@@ -42,6 +42,16 @@ bool create_project(const std::string& parent_dir,
                     std::string& out_manifest_path,
                     const std::string& engine_version = "");
 
+// Adopt a pre-existing folder as a project: ensures the standard folder layout
+// (creating any missing `scenes/` / `assets/*` subfolders) and, if there is no
+// `project.schizo` yet, writes one (name = folder basename, default features).
+// If a manifest already exists it is left intact. Fills `out_manifest_path` and
+// `out_name`. `engine_version` seeds a freshly-written manifest only.
+bool import_existing_project(const std::string& folder,
+                             const std::string& engine_version,
+                             std::string& out_manifest_path,
+                             std::string& out_name);
+
 // ----------------------------------------------------------------------------
 // Recent-projects registry, persisted in the user config dir.
 // ----------------------------------------------------------------------------
@@ -56,9 +66,15 @@ public:
     void save() const;
 
     void add(const RecentProject& p);              // add or promote to front (dedup by path)
-    void remove(const std::string& manifest_path);
+    void remove(std::string manifest_path);        // by value: safe even when the arg
+                                                   // aliases a string inside items_
 
     const std::vector<RecentProject>& items() const { return items_; }
+
+    // Uniqueness of display names (so two projects never share a name, which
+    // would make them indistinguishable in the list).
+    bool        name_exists(const std::string& name) const;
+    std::string unique_name(const std::string& base) const;  // base, "base (2)", "base (3)"...
 
     // `%APPDATA%/GameWorldshaper/recent_projects.txt` (Windows) or a home fallback.
     static std::string config_path();

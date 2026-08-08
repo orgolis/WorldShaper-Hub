@@ -270,12 +270,95 @@ void ProjectsRegistry::add(const RecentProject& p) {
     if (items_.size() > 20) items_.resize(20);
 }
 
-void ProjectsRegistry::remove(const std::string& manifest_path) {
+void ProjectsRegistry::remove(std::string manifest_path) {
+    // `manifest_path` is taken BY VALUE on purpose: callers frequently pass a
+    // reference to a string that lives inside `items_` (e.g. the selected row),
+    // and std::remove_if shuffles/overwrites those very strings mid-pass. A
+    // reference parameter would dangle → crash. The copy makes it safe.
     items_.erase(std::remove_if(items_.begin(), items_.end(),
                                 [&](const RecentProject& r) {
                                     return r.manifest_path == manifest_path;
                                 }),
                  items_.end());
+}
+
+bool ProjectsRegistry::name_exists(const std::string& name) const {
+    for (const auto& p : items_)
+        if (p.name == name) return true;
+    return false;
+}
+
+std::string ProjectsRegistry::unique_name(const std::string& base) const {
+    std::string candidate = base.empty() ? std::string("Project") : base;
+    if (!name_exists(candidate)) return candidate;
+    for (int n = 2; n < 10000; ++n) {
+        candidate = base + " (" + std::to_string(n) + ")";
+        if (!name_exists(candidate)) return candidate;
+    }
+    return base;  // unreachable in practice
+}
+
+// ============================================================================
+// import_existing_project
+// ============================================================================
+bool import_existing_project(const std::string& folder,
+                             const std::string& engine_version,
+                             std::string& out_manifest_path,
+                             std::string& out_name) {
+    std::error_code ec;
+    fs::path root = fs::path(folder);
+    if (folder.empty() || !fs::exists(root, ec) || !fs::is_directory(root, ec)) {
+        spdlog::error("[project] import target is not a folder: {}", folder);
+        return false;
+    }
+
+    // Ensure the standard folder layout — create only what is missing.
+    static const char* kNeeded[] = {
+        "scenes", "assets", "assets/models", "assets/textures",
+        "assets/scripts", "assets/skies",
+    };
+    for (const char* rel : kNeeded) {
+        fs::path p = root / rel;
+        if (!fs::exists(p, ec)) {
+            fs::create_directories(p, ec);
+            if (ec) {
+                spdlog::error("[project] import: cannot create '{}': {}", p.string(), ec.message());
+                return false;
+            }
+            spdlog::info("[project] import: created missing folder '{}'", rel);
+        }
+    }
+
+    std::string manifest_path = (root / kManifestFilename).string();
+    if (fs::exists(manifest_path, ec)) {
+        // Already a project — adopt it as-is (keep its name/version/features).
+        ProjectManifest m;
+        if (!ProjectManifest::load(manifest_path, m)) {
+            spdlog::error("[project] import: existing manifest is unreadable: {}", manifest_path);
+            return false;
+        }
+        out_name = m.name.empty() ? root.filename().string() : m.name;
+    } else {
+        // No manifest yet — synthesise one from the folder.
+        ProjectManifest m;
+        m.name          = root.filename().string();
+        if (m.name.empty()) m.name = "Imported Project";
+        m.default_scene = "scenes/main.scene";
+        m.features      = FeatureSet::defaults();
+        m.features.resolve_dependencies();
+        m.project_dir   = root.string();
+        if (!engine_version.empty()) m.engine_version = engine_version;
+        if (!ProjectManifest::save(manifest_path, m)) {
+            spdlog::error("[project] import: failed to write manifest: {}", manifest_path);
+            return false;
+        }
+        out_name = m.name;
+        spdlog::info("[project] import: wrote new manifest for '{}'", m.name);
+    }
+
+    out_manifest_path = manifest_path;
+    spdlog::info("[project] imported project '{}' from {}", out_name, root.string());
+    return true;
 }
 
 } // namespace schizo::project
