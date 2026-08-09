@@ -47,6 +47,7 @@ set(IMGUI_SOURCES
 # project.schizo format contract; kept as this repo's own copy).
 set(HUB_CORE
     src/project.cpp
+    src/git_scaffold.cpp
     src/engine_registry.cpp
     src/http_client.cpp
     src/update_feed.cpp

@@ -1,4 +1,5 @@
 #include "project.h"
+#include "git_scaffold.h"
 
 #include <spdlog/spdlog.h>
 
@@ -197,6 +198,13 @@ bool create_project(const std::string& parent_dir,
     if (!ProjectManifest::save(manifest_path, m)) return false;
 
     out_manifest_path = manifest_path;
+
+    // Git + LFS, configured before anything is committed. Never fatal: a
+    // developer without git still gets a working project. See git_scaffold.h
+    // for why the ordering matters.
+    const GitScaffoldResult git = scaffold_git(root.string(), name);
+    spdlog::info("[project] git scaffolding: {}", git.message);
+
     spdlog::info("[project] created project '{}' at {}", name, root.string());
     return true;
 }

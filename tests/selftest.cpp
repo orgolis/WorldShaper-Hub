@@ -7,6 +7,8 @@
 #include "engine_registry.h"
 #include "self_update.h"
 #include "project.h"
+#include <fstream>
+#include "git_scaffold.h"
 
 #include <spdlog/spdlog.h>
 
@@ -22,6 +24,23 @@ static int g_fail = 0;
 static void check(const char* what, bool ok) {
     std::cout << (ok ? "  [ OK ] " : "  [FAIL] ") << what << "\n";
     if (!ok) ++g_fail;
+}
+
+// std::filesystem::remove_all cannot delete git's object files on Windows:
+// git marks them read-only, and the delete fails partway, leaving a half-built
+// .git behind. The next run then starts dirty and fails — so the test passed
+// once and failed on every re-run. Clear the read-only bit first.
+static void force_remove_all(const fs::path& p) {
+    std::error_code ec;
+    if (!fs::exists(p, ec)) return;
+    for (auto it = fs::recursive_directory_iterator(
+                       p, fs::directory_options::skip_permission_denied, ec);
+         it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        if (ec) { ec.clear(); continue; }
+        fs::permissions(it->path(), fs::perms::owner_all, fs::perm_options::add, ec);
+        ec.clear();
+    }
+    fs::remove_all(p, ec);
 }
 
 // ---- local, network-free checks: registry uniqueness / remove safety / import ----
@@ -66,6 +85,63 @@ static int run_local_checks() {
     bool imp2 = import_existing_project((tmp / "MyGame").string(), "9.9.9", mpath2, name2);
     check("re-import adopts existing manifest", imp2 && name2 == "MyGame" && mpath2 == mpath);
     fs::remove_all(tmp, ec);
+
+    // ---- git + LFS scaffolding (issue #2) --------------------------------
+    // The rule this protects: LFS must be configured BEFORE the first commit,
+    // or already-committed binaries stay in history forever.
+    {
+        fs::path g = fs::temp_directory_path(ec) / "gws_hub_selftest_git";
+        force_remove_all(g);
+        fs::create_directories(g, ec);
+        std::string mp;
+        FeatureSet fx;
+        bool made = create_project(g.string(), "GitGame", fx, mp, "0.2.0");
+        check("create_project succeeds", made);
+
+        const fs::path proj = g / "GitGame";
+        check("wrote .gitattributes", fs::exists(proj / ".gitattributes", ec));
+        check("wrote .gitignore",     fs::exists(proj / ".gitignore", ec));
+
+        std::ifstream ga(proj / ".gitattributes");
+        std::string attrs((std::istreambuf_iterator<char>(ga)), std::istreambuf_iterator<char>());
+        check("LFS tracks textures", attrs.find("*.png   filter=lfs") != std::string::npos);
+        check("LFS tracks models",   attrs.find("*.fbx   filter=lfs") != std::string::npos);
+        check("LFS tracks audio",    attrs.find("*.wav   filter=lfs") != std::string::npos);
+        // The distinction that matters: engine text formats must NOT be in LFS,
+        // or scene history stops being readable.
+        check("scenes stay text",    attrs.find("*.scene    text") != std::string::npos);
+        check("gameplay stays text", attrs.find("*.gameplay text") != std::string::npos);
+        check("scenes NOT in LFS",   attrs.find("*.scene  filter=lfs") == std::string::npos);
+
+        std::ifstream gi(proj / ".gitignore");
+        std::string ign((std::istreambuf_iterator<char>(gi)), std::istreambuf_iterator<char>());
+        check("ignores build output", ign.find("build/") != std::string::npos);
+        check("ignores editor.ini",   ign.find("editor.ini") != std::string::npos);
+
+        // git itself is optional: absence must not fail project creation.
+        if (git_available()) {
+            check("git repo initialised", fs::exists(proj / ".git", ec));
+
+            // THE property this feature exists for: the LFS rules must be in the
+            // FIRST commit. If .gitattributes arrives after binaries are already
+            // committed, those binaries are in history forever and the repo is
+            // permanently bloated. Asserting the file exists on disk is not
+            // enough — it has to be tracked.
+            const std::string q =
+                "\"cd /d \"" + proj.string() + "\" && git ls-files --error-unmatch "
+                ".gitattributes >nul 2>&1\"";
+            check("LFS rules are in the first commit", std::system(q.c_str()) == 0);
+
+            const std::string q2 =
+                "\"cd /d \"" + proj.string() + "\" && git ls-files --error-unmatch "
+                "project.schizo >nul 2>&1\"";
+            check("manifest committed too", std::system(q2.c_str()) == 0);
+        } else {
+            std::cout << "  [note] git not on PATH - repo-creation checks skipped" << std::endl;
+            check("project still created without git", fs::exists(mp, ec));
+        }
+        force_remove_all(g);
+    }
 
     if (g_fail == 0) { std::cout << "hub_selftest (local): ALL OK\n"; return 0; }
     std::cout << "hub_selftest (local): " << g_fail << " FAILED\n";
