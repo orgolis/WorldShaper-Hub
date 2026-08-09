@@ -54,6 +54,21 @@ Recorded so these are not re-litigated:
 **Known polish backlog** — [#3](https://github.com/orgolis/WorldShaper-Hub/issues/3): threaded downloads (the UI
 blocks during an install), a per-user install that needs no administrator rights, and Release-build size.
 
+**Hard-won detail worth not rediscovering — release assets are part of the install path.** The Hub picks a
+release asset by *substring match* and takes the **first hit in GitHub's name-sorted list**. When engine v0.2.0
+added a second asset (`engine-v0.2.0-win64-symbols.zip`), it sorted *ahead of* `engine-v0.2.0-win64.zip`, so every
+Hub already installed would have downloaded 63 MB of debug binaries and installed them as the engine. Two rules
+follow:
+
+1. **Adding an asset to an engine release is a change to the Hub's install path.** Treat it as such.
+2. **Hubs already in the wild can never be patched.** Any fix must work for the version users already have — which
+   is why the symbols archive became `.tar.gz` (matching no `.zip` filter by construction) rather than relying on
+   the Hub's matcher being tightened. The tightened default (`-win64.zip`) is the second line of defence only.
+
+`hub_selftest <api_base> <owner> <repo>` exercises the real feed end-to-end (download, extract, install, verify
+`editor.exe`). **It should run in this repo's CI against the live feed**, which would have caught the above before
+the release rather than after.
+
 **Hard-won detail worth not rediscovering:** the Hub installs to Program Files, so both the NSIS uninstaller and
 the self-update file-swap need elevation. Launching them with `CreateProcess` fails with
 `ERROR_ELEVATION_REQUIRED`; they must go through `ShellExecute` with `runas`, and user data must only be removed
