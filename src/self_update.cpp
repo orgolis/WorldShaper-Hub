@@ -127,7 +127,12 @@ bool check_hub_update(RemoteVersion& newer, bool& found, std::string* err) {
         return false;
     }
     std::vector<RemoteVersion> rels;
-    if (!fetch_github_releases(spec.substr(0, slash), spec.substr(slash + 1), rels, err, ".zip"))
+    // "-win64.zip", not ".zip" — asset matching takes the FIRST hit in GitHub's
+    // name-sorted list, so a second .zip on a release (a symbols archive, say)
+    // shadows the real package. That exact bug hit the engine feed at v0.2.0.
+    // The Hub's releases carry only one .zip today; this keeps it safe by
+    // construction. See the note in github_releases.h.
+    if (!fetch_github_releases(spec.substr(0, slash), spec.substr(slash + 1), rels, err, "-win64.zip"))
         return false;
 
     const std::string cur = hub_version();

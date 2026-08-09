@@ -16,9 +16,18 @@ namespace schizo::project {
 // whose filename contains `asset_match` yields a RemoteVersion (version = tag
 // with any leading 'v' stripped, url = asset browser_download_url). `api_base`
 // defaults to the public API; override it (e.g. a local mock) for testing.
+//
+// NOTE on the default: it is "-win64.zip", NOT ".zip". Releases can carry more
+// than one asset — engine v0.2.0 added an unstripped symbols archive — and the
+// match takes the FIRST hit in GitHub's name-sorted asset list. A bare ".zip"
+// matched "engine-<tag>-win64-symbols.zip" first, which would have installed
+// 63 MB of debug binaries as the engine. The symbols archive is also no longer
+// a .zip (see the engine's release-engine.yml), so Hubs already installed in
+// the wild — which cannot be fixed retroactively — keep working. This tighter
+// default is the second line of defence, not the primary one.
 bool fetch_github_releases(const std::string& owner, const std::string& repo,
                            std::vector<RemoteVersion>& out, std::string* err,
-                           const std::string& asset_match = ".zip",
+                           const std::string& asset_match = "-win64.zip",
                            const std::string& api_base = "https://api.github.com");
 
 // Persisted "owner/repo" the Hub pulls from (%APPDATA%/GameWorldshaper/github_repo.txt).
