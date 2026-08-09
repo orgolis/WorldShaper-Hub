@@ -9,6 +9,9 @@ It is a **separate program and repository** from the engine on purpose: the Hub
 is the stable outer shell that installs and launches *many* engine versions, so
 it must not be tied to any single one.
 
+> **Where this is going:** see [`docs/PLAN.md`](docs/PLAN.md) — the Hub's plan of record
+> (what it is, what it deliberately is not, current state, and the roadmap by phase).
+
 ---
 
 ## Build
