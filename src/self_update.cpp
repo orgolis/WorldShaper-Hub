@@ -1,4 +1,5 @@
 #include "self_update.h"
+#include "version_compare.h"
 
 #include "github_releases.h"   // fetch_github_releases, github_download_headers
 #include "engine_registry.h"   // this_executable_path
@@ -27,20 +28,6 @@ fs::path config_dir() {
     if (const char* ad = std::getenv("APPDATA")) return fs::path(ad) / "GameWorldshaper";
     if (const char* hp = std::getenv("USERPROFILE")) return fs::path(hp) / ".gameworldshaper";
     return fs::path(".") / ".gameworldshaper";
-}
-
-// Parse a dotted version's numeric leading components (ignores any trailing
-// pre-release suffix): "1.2.3-rc1" -> [1,2,3].
-std::vector<long> version_parts(const std::string& v) {
-    std::vector<long> parts;
-    size_t i = 0;
-    while (i < v.size()) {
-        long n = 0; bool any = false;
-        while (i < v.size() && v[i] >= '0' && v[i] <= '9') { n = n * 10 + (v[i]-'0'); ++i; any = true; }
-        if (any) parts.push_back(n); else break;
-        if (i < v.size() && v[i] == '.') ++i; else break;
-    }
-    return parts;
 }
 
 #ifdef _WIN32
@@ -104,18 +91,6 @@ void set_hub_repo(const std::string& owner_slash_repo) {
     std::error_code ec;
     fs::create_directories(config_dir(), ec);
     std::ofstream(config_dir() / "hub_repo.txt", std::ios::trunc) << owner_slash_repo << "\n";
-}
-
-bool version_is_newer(const std::string& candidate, const std::string& current) {
-    const std::vector<long> a = version_parts(candidate);
-    const std::vector<long> b = version_parts(current);
-    const size_t n = std::max(a.size(), b.size());
-    for (size_t i = 0; i < n; ++i) {
-        const long ca = i < a.size() ? a[i] : 0;
-        const long cb = i < b.size() ? b[i] : 0;
-        if (ca != cb) return ca > cb;
-    }
-    return false;   // equal
 }
 
 bool check_hub_update(RemoteVersion& newer, bool& found, std::string* err) {

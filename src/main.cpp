@@ -553,6 +553,15 @@ int main() {
                         status = "Enter the repo as owner/repo.";
                     } else if (fetch_github_releases(spec.substr(0, slash), spec.substr(slash + 1),
                                                      remote_versions, &e)) {
+                        // Newest first, by NUMBER. GitHub returns releases in
+                        // its own order and the list used to be shown as-is;
+                        // sorting here means the version a person is most
+                        // likely to want is the one at the top, and that
+                        // "0.6.10" ranks above "0.6.9" rather than below it.
+                        std::sort(remote_versions.begin(), remote_versions.end(),
+                                  [](const RemoteVersion& a, const RemoteVersion& b) {
+                                      return version_is_newer(a.version, b.version);
+                                  });
                         status = std::to_string(remote_versions.size()) + " release(s) available.";
                     } else {
                         status = "GitHub error: " + e;

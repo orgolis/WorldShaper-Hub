@@ -43,9 +43,35 @@ static void force_remove_all(const fs::path& p) {
     fs::remove_all(p, ec);
 }
 
+// ---- version ordering: no network needed, and the bug was not network-related --
+static void run_version_checks() {
+    // ---- version ordering ---------------------------------------------
+    // The bug this guards: the engine picker compared version STRINGS, so
+    // "0.6.10" < "0.6.9" ('1' sorts before '9') and the Hub treated a freshly
+    // installed engine as older than the one it replaced. It stayed invisible
+    // for fifty releases because every patch number until 0.6.10 was a single
+    // digit — which is exactly why the case belongs in a test rather than in
+    // someone's memory.
+        check("0.6.10 is newer than 0.6.9",   version_is_newer("0.6.10", "0.6.9"));
+        check("0.6.9 is NOT newer than 0.6.10", !version_is_newer("0.6.9", "0.6.10"));
+        check("0.7.0 is newer than 0.6.10",   version_is_newer("0.7.0", "0.6.10"));
+        check("1.0.0 is newer than 0.9.9",    version_is_newer("1.0.0", "0.9.9"));
+        check("0.6.11 is newer than 0.6.10",  version_is_newer("0.6.11", "0.6.10"));
+        check("0.10.0 is newer than 0.9.0",   version_is_newer("0.10.0", "0.9.0"));
+        // Equality, both spellings — a release must never look like an update
+        // to itself, or the Hub offers an endless reinstall.
+        check("equal versions are not newer", !version_is_newer("0.6.10", "0.6.10"));
+        check("0.6 equals 0.6.0",             !version_is_newer("0.6", "0.6.0") &&
+                                              !version_is_newer("0.6.0", "0.6"));
+        // Tag suffixes are ignored, so a v-prefix stripped upstream and a
+        // pre-release suffix both still compare on the numbers.
+        check("pre-release suffix ignored",   version_is_newer("0.6.10-rc1", "0.6.9"));
+}
+
 // ---- local, network-free checks: registry uniqueness / remove safety / import ----
 static int run_local_checks() {
     std::cout << "  mode: local (no network)\n";
+    run_version_checks();
 
     // Registry operates purely in memory here (add()/remove() never touch disk;
     // only the UI calls save()), so the user's real recent_projects.txt is safe.
@@ -218,6 +244,8 @@ int main(int argc, char** argv) {
         EngineRegistry::forget_version(v[0].version);
         check("forget_version drops it from history", !in_history(v[0].version));
     }
+
+    run_version_checks();
 
     // Real runs never touch the token; only mock mode set a fake one — undo that
     // so a token-free machine stays token-free (no lingering token file).

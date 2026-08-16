@@ -6,7 +6,8 @@
 // process that waits for the Hub to exit, copies the new files over the install,
 // and relaunches — the same technique the uninstaller uses.
 // ============================================================================
-#include "update_feed.h"   // RemoteVersion
+#include "update_feed.h"      // RemoteVersion
+#include "version_compare.h"  // version_is_newer (shared with the engine path)
 
 #include <functional>
 #include <string>
@@ -21,9 +22,6 @@ std::string hub_version();
 std::string hub_repo();
 void        set_hub_repo(const std::string& owner_slash_repo);
 
-// Compare dotted-numeric versions: true if `candidate` is strictly newer than
-// `current` (e.g. "0.2.0" vs "0.1.3" -> true). Non-numeric parts count as 0.
-bool version_is_newer(const std::string& candidate, const std::string& current);
 
 // Query the Hub repo's releases. On success returns true and, if a release newer
 // than this build exists, sets `found=true` and fills `newer`; otherwise

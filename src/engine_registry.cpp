@@ -1,4 +1,5 @@
 #include "engine_registry.h"
+#include "version_compare.h"
 
 #include <spdlog/spdlog.h>
 
@@ -220,7 +221,12 @@ const EngineVersion* EngineRegistry::best() const {
     const EngineVersion* pick = nullptr;
     for (const auto& v : versions_) {
         if (v.is_dev) { if (!pick) pick = &v; continue; }
-        if (!pick || pick->is_dev || v.version > pick->version) pick = &v;  // lexicographic-ish
+        // version_is_newer, NOT operator>. Comparing version strings put "0.6.10"
+        // before "0.6.9" because '1' sorts before '9', so the Hub decided a
+        // freshly installed engine was older than the one it replaced and kept
+        // launching the previous version. Invisible for fifty releases because
+        // every patch number until then was a single digit.
+        if (!pick || pick->is_dev || version_is_newer(v.version, pick->version)) pick = &v;
     }
     return pick;
 }
