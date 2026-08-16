@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(GameWorldshaperHub VERSION 0.1.7 LANGUAGES CXX)
+project(GameWorldshaperHub VERSION 0.1.8 LANGUAGES CXX)
 
 # ============================================================================
 # GameWorldshaper Hub — standalone launcher. Independent of the engine source
