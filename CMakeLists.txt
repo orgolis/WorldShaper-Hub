@@ -68,6 +68,11 @@ target_link_libraries(GameWorldshaperHub PRIVATE
 if(WIN32)
     # opengl32: imgui_impl_opengl2. shell32/ole32: folder picker. winhttp: releases API.
     target_link_libraries(GameWorldshaperHub PRIVATE opengl32 shell32 ole32 winhttp)
+else()
+    # ImGui's OpenGL2 backend calls OpenGL directly. GLFW does not expose
+    # those symbols transitively on Linux, so link the platform OpenGL target.
+    find_package(OpenGL REQUIRED)
+    target_link_libraries(GameWorldshaperHub PRIVATE OpenGL::GL)
 endif()
 
 # Self-test (headless): GitHub-Releases-API path (fetch/parse/download/install/
@@ -80,8 +85,9 @@ if(WIN32)
     target_link_libraries(hub_selftest PRIVATE winhttp shell32)  # shell32: self_update ShellExecute
 endif()
 
-# Bundle the MinGW runtime DLLs next to the exe so it runs on a clean box.
-if(MINGW OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+# Bundle the MinGW runtime DLLs next to the Windows exe so it runs on a clean
+# box. Linux can also use GNU, but it neither has nor needs these DLLs.
+if(MINGW)
     get_filename_component(_mingw_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
     foreach(dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
         add_custom_command(TARGET GameWorldshaperHub POST_BUILD

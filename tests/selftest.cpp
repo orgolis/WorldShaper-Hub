@@ -154,13 +154,23 @@ static int run_local_checks() {
             // permanently bloated. Asserting the file exists on disk is not
             // enough — it has to be tracked.
             const std::string q =
+#ifdef _WIN32
                 "\"cd /d \"" + proj.string() + "\" && git ls-files --error-unmatch "
                 ".gitattributes >nul 2>&1\"";
+#else
+                "cd \"" + proj.string() + "\" && git ls-files --error-unmatch "
+                ".gitattributes >/dev/null 2>&1";
+#endif
             check("LFS rules are in the first commit", std::system(q.c_str()) == 0);
 
             const std::string q2 =
+#ifdef _WIN32
                 "\"cd /d \"" + proj.string() + "\" && git ls-files --error-unmatch "
                 "project.schizo >nul 2>&1\"";
+#else
+                "cd \"" + proj.string() + "\" && git ls-files --error-unmatch "
+                "project.schizo >/dev/null 2>&1";
+#endif
             check("manifest committed too", std::system(q2.c_str()) == 0);
         } else {
             std::cout << "  [note] git not on PATH - repo-creation checks skipped" << std::endl;

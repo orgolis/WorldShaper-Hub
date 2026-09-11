@@ -200,6 +200,13 @@ static bool uninstall_hub(std::string& msg, bool remove_engines) {
     return true;
 }
 #else
+// Linux packages do not use the Hub's Windows/NSIS uninstaller. Returning an
+// empty path keeps the shared confirmation UI platform-neutral: it displays
+// the manual-removal behaviour implemented by uninstall_hub() below.
+static fs::path find_uninstaller() {
+    return {};
+}
+
 static bool uninstall_hub(std::string& msg, bool remove_engines) {
     remove_hub_data(remove_engines);
     msg = "Removed Hub data. Delete the Hub folder manually on this platform.";
