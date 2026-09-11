@@ -101,6 +101,145 @@ static void draw_feature_checklist(FeatureSet& features) {
 
 static void glfw_error(int e, const char* d) { std::fprintf(stderr, "GLFW %d: %s\n", e, d); }
 
+namespace hub_ui {
+
+constexpr ImVec4 kAccent      {0.10f, 0.68f, 0.82f, 1.00f};
+constexpr ImVec4 kAccentHot   {0.16f, 0.78f, 0.91f, 1.00f};
+constexpr ImVec4 kMuted       {0.52f, 0.59f, 0.67f, 1.00f};
+constexpr ImVec4 kWarning     {0.98f, 0.70f, 0.25f, 1.00f};
+constexpr ImVec4 kDanger      {0.94f, 0.34f, 0.38f, 1.00f};
+
+static void apply_theme(GLFWwindow* window) {
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.WindowPadding     = ImVec2(14.0f, 12.0f);
+    style.FramePadding      = ImVec2(10.0f, 7.0f);
+    style.CellPadding       = ImVec2(8.0f, 6.0f);
+    style.ItemSpacing       = ImVec2(9.0f, 8.0f);
+    style.ItemInnerSpacing  = ImVec2(7.0f, 5.0f);
+    style.ScrollbarSize     = 13.0f;
+    style.GrabMinSize       = 11.0f;
+    style.WindowBorderSize  = 0.0f;
+    style.ChildBorderSize   = 1.0f;
+    style.PopupBorderSize   = 1.0f;
+    style.FrameBorderSize   = 0.0f;
+    style.TabBorderSize     = 0.0f;
+    style.WindowRounding    = 8.0f;
+    style.ChildRounding     = 7.0f;
+    style.FrameRounding     = 6.0f;
+    style.PopupRounding     = 7.0f;
+    style.ScrollbarRounding = 9.0f;
+    style.GrabRounding      = 6.0f;
+    style.TabRounding       = 6.0f;
+
+    constexpr ImVec4 text   {0.91f, 0.94f, 0.97f, 1.00f};
+    constexpr ImVec4 canvas {0.030f, 0.041f, 0.058f, 1.00f};
+    constexpr ImVec4 panel  {0.050f, 0.066f, 0.090f, 1.00f};
+    constexpr ImVec4 raised {0.075f, 0.098f, 0.132f, 1.00f};
+    constexpr ImVec4 border {0.14f, 0.19f, 0.26f, 1.00f};
+
+    ImVec4* c = style.Colors;
+    c[ImGuiCol_Text]                  = text;
+    c[ImGuiCol_TextDisabled]          = kMuted;
+    c[ImGuiCol_WindowBg]              = canvas;
+    c[ImGuiCol_ChildBg]               = panel;
+    c[ImGuiCol_PopupBg]               = ImVec4(0.043f, 0.057f, 0.078f, 0.98f);
+    c[ImGuiCol_Border]                = border;
+    c[ImGuiCol_BorderShadow]          = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_FrameBg]               = raised;
+    c[ImGuiCol_FrameBgHovered]        = ImVec4(0.11f, 0.17f, 0.22f, 1.00f);
+    c[ImGuiCol_FrameBgActive]         = ImVec4(0.12f, 0.22f, 0.28f, 1.00f);
+    c[ImGuiCol_TitleBg]               = panel;
+    c[ImGuiCol_TitleBgActive]         = raised;
+    c[ImGuiCol_TitleBgCollapsed]      = panel;
+    c[ImGuiCol_MenuBarBg]             = panel;
+    c[ImGuiCol_ScrollbarBg]           = ImVec4(0.02f, 0.03f, 0.04f, 0.75f);
+    c[ImGuiCol_ScrollbarGrab]         = ImVec4(0.20f, 0.26f, 0.33f, 1.00f);
+    c[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.27f, 0.35f, 0.43f, 1.00f);
+    c[ImGuiCol_ScrollbarGrabActive]   = ImVec4(0.34f, 0.44f, 0.52f, 1.00f);
+    c[ImGuiCol_CheckMark]             = kAccentHot;
+    c[ImGuiCol_SliderGrab]            = kAccent;
+    c[ImGuiCol_SliderGrabActive]      = kAccentHot;
+    c[ImGuiCol_Button]                = raised;
+    c[ImGuiCol_ButtonHovered]         = ImVec4(0.09f, 0.42f, 0.51f, 1.00f);
+    c[ImGuiCol_ButtonActive]          = ImVec4(0.08f, 0.58f, 0.69f, 1.00f);
+    c[ImGuiCol_Header]                = ImVec4(0.09f, 0.31f, 0.38f, 0.82f);
+    c[ImGuiCol_HeaderHovered]         = ImVec4(0.11f, 0.43f, 0.52f, 0.92f);
+    c[ImGuiCol_HeaderActive]          = ImVec4(0.10f, 0.55f, 0.66f, 1.00f);
+    c[ImGuiCol_Separator]             = border;
+    c[ImGuiCol_SeparatorHovered]      = kAccent;
+    c[ImGuiCol_SeparatorActive]       = kAccentHot;
+    c[ImGuiCol_ResizeGrip]            = ImVec4(kAccent.x, kAccent.y, kAccent.z, 0.20f);
+    c[ImGuiCol_ResizeGripHovered]     = ImVec4(kAccent.x, kAccent.y, kAccent.z, 0.67f);
+    c[ImGuiCol_ResizeGripActive]      = kAccentHot;
+    c[ImGuiCol_Tab]                   = raised;
+    c[ImGuiCol_TabHovered]            = ImVec4(0.10f, 0.42f, 0.51f, 1.00f);
+    c[ImGuiCol_TabActive]             = ImVec4(0.08f, 0.30f, 0.37f, 1.00f);
+    c[ImGuiCol_TabUnfocused]          = panel;
+    c[ImGuiCol_TabUnfocusedActive]    = raised;
+    c[ImGuiCol_TextSelectedBg]        = ImVec4(kAccent.x, kAccent.y, kAccent.z, 0.34f);
+    c[ImGuiCol_DragDropTarget]        = kWarning;
+    c[ImGuiCol_NavHighlight]          = kAccentHot;
+    c[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.01f, 0.02f, 0.03f, 0.72f);
+
+    float xscale = 1.0f, yscale = 1.0f;
+    glfwGetWindowContentScale(window, &xscale, &yscale);
+    const float ui_scale = std::clamp(std::max(xscale, yscale), 1.0f, 1.75f);
+    if (ui_scale > 1.01f) style.ScaleAllSizes(ui_scale);
+
+    ImGuiIO& io = ImGui::GetIO();
+    const char* font_candidates[] = {
+#ifdef _WIN32
+        "C:\\Windows\\Fonts\\segoeui.ttf",
+        "C:\\Windows\\Fonts\\arial.ttf",
+#else
+        "/usr/share/fonts/TTF/Inter-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+#endif
+    };
+    for (const char* candidate : font_candidates) {
+        std::error_code ec;
+        if (!fs::is_regular_file(candidate, ec)) continue;
+        if (ImFont* font = io.Fonts->AddFontFromFileTTF(candidate, 15.5f * ui_scale)) {
+            io.FontDefault = font;
+            break;
+        }
+    }
+}
+
+static void page_header(const char* title, const char* description) {
+    ImGui::SetWindowFontScale(1.35f);
+    ImGui::TextUnformatted(title);
+    ImGui::SetWindowFontScale(1.0f);
+    ImGui::TextDisabled("%s", description);
+    ImGui::Dummy(ImVec2(0, 3));
+    ImGui::Separator();
+    ImGui::Dummy(ImVec2(0, 5));
+}
+
+static bool nav_item(const char* label, bool selected) {
+    ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.08f, 0.5f));
+    if (selected) {
+        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.08f, 0.34f, 0.42f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, kAccentHot);
+    }
+    const bool clicked = ImGui::Selectable(label, selected, 0, ImVec2(0, 42.0f));
+    if (selected) ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar();
+    return clicked;
+}
+
+static bool primary_button(const char* label, ImVec2 size = ImVec2(0, 0)) {
+    ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.08f, 0.47f, 0.57f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.10f, 0.62f, 0.73f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.08f, 0.70f, 0.82f, 1.0f));
+    const bool pressed = ImGui::Button(label, size);
+    ImGui::PopStyleColor(3);
+    return pressed;
+}
+
+} // namespace hub_ui
+
 // Locate a development editor without baking one operating system's filename
 // or one launch directory into the Hub. GWS_DEV_EDITOR is the explicit escape
 // hatch; the remaining candidates cover packaged siblings and the usual
@@ -254,8 +393,9 @@ static bool uninstall_hub(std::string& msg, bool remove_engines) {
 int main() {
     glfwSetErrorCallback(glfw_error);
     if (!glfwInit()) return 1;
-    GLFWwindow* win = glfwCreateWindow(1000, 660, "GameWorldshaper Hub", nullptr, nullptr);
+    GLFWwindow* win = glfwCreateWindow(1180, 760, "World Shaper Hub", nullptr, nullptr);
     if (!win) { glfwTerminate(); return 1; }
+    glfwSetWindowSizeLimits(win, 940, 620, GLFW_DONT_CARE, GLFW_DONT_CARE);
     glfwMakeContextCurrent(win);
     glfwSwapInterval(1);
 
@@ -263,6 +403,7 @@ int main() {
     ImGui::CreateContext();
     ImGui::GetIO().IniFilename = nullptr;   // the hub doesn't persist window layout
     ImGui::StyleColorsDark();
+    hub_ui::apply_theme(win);
     ImGui_ImplGlfw_InitForOpenGL(win, true);
     ImGui_ImplOpenGL2_Init();
 
@@ -278,6 +419,7 @@ int main() {
     FeatureSet new_features = FeatureSet::defaults();
     int        new_engine_idx = 0;
     int        sel_project = -1;
+    int        active_page = 0;  // Projects, New Project, Engines, Settings
     std::string status;
     {   // On launch, report what engine versions are installed / were installed.
         size_t inst = 0; for (const auto& v : engines.versions()) if (!v.is_dev) ++inst;
@@ -337,20 +479,62 @@ int main() {
                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-        ImGui::SetWindowFontScale(1.7f);
-        ImGui::TextUnformatted("GameWorldshaper Hub");
-        ImGui::SetWindowFontScale(1.0f);
-        ImGui::TextDisabled("Manage your projects and engine versions");
-        ImGui::Separator();
-        ImGui::Dummy(ImVec2(0, 4));
+        size_t installed_count = 0;
+        for (const auto& version : engines.versions()) if (!version.is_dev) ++installed_count;
 
-        if (ImGui::BeginTabBar("hub_tabs")) {
+        // Brand header and live workspace summary. This replaces the oversized
+        // title + tab strip with a stable application shell: navigation stays in
+        // one place while counts remain visible on every page.
+        ImGui::BeginChild("hub_header", ImVec2(0, 72.0f), true,
+                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        ImGui::PushStyleColor(ImGuiCol_Text, hub_ui::kAccentHot);
+        ImGui::SetWindowFontScale(1.55f);
+        ImGui::TextUnformatted("WORLD SHAPER");
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopStyleColor();
+        ImGui::TextDisabled("Project and engine workspace");
+
+        const std::string summary = std::to_string(projects.items().size()) + " projects   |   " +
+                                    std::to_string(installed_count) + " engines   |   Hub " +
+                                    hub_version();
+        const float summary_x = ImGui::GetWindowWidth() -
+                                ImGui::CalcTextSize(summary.c_str()).x -
+                                ImGui::GetStyle().WindowPadding.x;
+        ImGui::SetCursorPos(ImVec2(std::max(ImGui::GetCursorPosX(), summary_x), 27.0f));
+        ImGui::TextColored(hub_ui::kMuted, "%s", summary.c_str());
+        ImGui::EndChild();
+        ImGui::Dummy(ImVec2(0, 2));
+
+        constexpr float footer_height = 48.0f;
+        ImGui::BeginChild("hub_navigation", ImVec2(190.0f, -footer_height), true);
+        ImGui::TextDisabled("WORKSPACE");
+        ImGui::Dummy(ImVec2(0, 4));
+        if (hub_ui::nav_item("Projects",        active_page == 0)) active_page = 0;
+        if (hub_ui::nav_item("New Project",     active_page == 1)) active_page = 1;
+        if (hub_ui::nav_item("Engine Versions", active_page == 2)) active_page = 2;
+        ImGui::Dummy(ImVec2(0, 8));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 8));
+        if (hub_ui::nav_item("Settings",        active_page == 3)) active_page = 3;
+        ImGui::EndChild();
+        ImGui::SameLine();
+
+        ImGui::BeginChild("hub_content", ImVec2(0, -footer_height), true);
             // ---------------- Projects ----------------
-            if (ImGui::BeginTabItem("Projects")) {
-                ImGui::TextDisabled("Double-click a project to open it. Select one to change its engine version or modules below.");
+            if (active_page == 0) {
+                hub_ui::page_header("Projects", "Open a recent project or adjust the engine and modules it uses.");
                 const float proj_list_h = ImGui::GetContentRegionAvail().y * 0.40f;
                 ImGui::BeginChild("projlist", ImVec2(0, proj_list_h), true);
                 const auto& items = projects.items();
+                if (items.empty()) {
+                    ImGui::Dummy(ImVec2(0, 18));
+                    const char* empty_title = "No projects in this workspace";
+                    const float center_x = (ImGui::GetContentRegionAvail().x -
+                                            ImGui::CalcTextSize(empty_title).x) * 0.5f;
+                    if (center_x > 0.0f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + center_x);
+                    ImGui::TextUnformatted(empty_title);
+                    ImGui::TextDisabled("Create your first project or add an existing folder below.");
+                }
                 for (int i = 0; i < (int)items.size(); ++i) {
                     const auto& it = items[i];
                     const bool exists = fs::exists(it.manifest_path);
@@ -377,7 +561,8 @@ int main() {
                 const bool can = sel_project >= 0 && sel_project < (int)items.size() &&
                                  fs::exists(items[sel_project].manifest_path);
                 ImGui::BeginDisabled(!can);
-                if (ImGui::Button("Open", ImVec2(110, 0)) && can) open_project(items[sel_project].manifest_path);
+                if (hub_ui::primary_button("Open", ImVec2(110, 0)) && can)
+                    open_project(items[sel_project].manifest_path);
                 ImGui::EndDisabled();
                 ImGui::SameLine();
                 if (ImGui::Button("Remove from list", ImVec2(150, 0)) &&
@@ -474,11 +659,11 @@ int main() {
                     }
                 }
                 ImGui::EndChild();   // projdetail
-                ImGui::EndTabItem();
             }
 
             // ---------------- New Project ----------------
-            if (ImGui::BeginTabItem("New Project")) {
+            if (active_page == 1) {
+                hub_ui::page_header("New Project", "Create a clean workspace with the engine features you need.");
                 ImGui::SetNextItemWidth(340); ImGui::InputText("Name", new_name, sizeof(new_name));
                 ImGui::SetNextItemWidth(340); ImGui::InputText("Location", new_loc, sizeof(new_loc));
                 ImGui::SameLine();
@@ -508,7 +693,7 @@ int main() {
 
                 const bool can = std::strlen(new_name) > 0 && std::strlen(new_loc) > 0 && !evs.empty();
                 ImGui::BeginDisabled(!can);
-                if (ImGui::Button("Create & Open", ImVec2(150, 0)) && can) {
+                if (hub_ui::primary_button("Create & Open", ImVec2(150, 0)) && can) {
                     if (projects.name_exists(new_name)) {
                         status = "A project named '" + std::string(new_name) +
                                  "' already exists — choose a unique name.";
@@ -520,11 +705,11 @@ int main() {
                     }
                 }
                 ImGui::EndDisabled();
-                ImGui::EndTabItem();
             }
 
             // ---------------- Engine Versions ----------------
-            if (ImGui::BeginTabItem("Engine Versions")) {
+            if (active_page == 2) {
+                hub_ui::page_header("Engine Versions", "Install, update and manage the editors available to your projects.");
                 ImGui::TextDisabled("Installed under: %s", EngineRegistry::engines_dir().c_str());
                 const auto prev = engines.previously_installed();
                 {
@@ -587,7 +772,7 @@ int main() {
                                           "Leave empty for public repos. Saved locally.");
                     ImGui::TreePop();
                 }
-                if (ImGui::Button("Check for Updates")) {
+                if (hub_ui::primary_button("Check for Updates")) {
                     set_github_repo(repo_buf);
                     set_github_token(token_buf);
                     std::string spec = repo_buf, e;
@@ -617,6 +802,8 @@ int main() {
                     if (!installed) {
                         ImGui::SameLine();
                         ImGui::PushID(rv.url.c_str());
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.08f, 0.47f, 0.57f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.10f, 0.62f, 0.73f, 1.0f));
                         if (ImGui::SmallButton("Download & Install")) {
                             std::string e;
                             status = "Downloading " + rv.version + "...";
@@ -625,6 +812,7 @@ int main() {
                                 engines.scan(dev_editor);
                             } else status = "Update failed: " + e;
                         }
+                        ImGui::PopStyleColor(2);
                         ImGui::PopID();
                     }
                 }
@@ -683,15 +871,15 @@ int main() {
                     if (ImGui::Button("Cancel", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
                     ImGui::EndPopup();
                 }
-                ImGui::EndTabItem();
             }
 
             // ---------------- Settings / Maintenance ----------------
-            if (ImGui::BeginTabItem("Settings")) {
+            if (active_page == 3) {
+                hub_ui::page_header("Settings", "Hub updates, storage locations and maintenance.");
                 // ---- Hub self-update ----
                 ImGui::TextUnformatted("Hub");
                 ImGui::BulletText("This Hub: version %s   (%s)", hub_version().c_str(), hub_repo().c_str());
-                if (ImGui::Button("Check for Hub Updates")) {
+                if (hub_ui::primary_button("Check for Hub Updates")) {
                     std::string e;
                     hub_update_checked = true;
                     if (check_hub_update(hub_update, hub_update_found, &e))
@@ -758,27 +946,30 @@ int main() {
                     if (ImGui::Button("Cancel", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
                     ImGui::EndPopup();
                 }
-                ImGui::EndTabItem();
             }
-
-            ImGui::EndTabBar();
-        }
+        ImGui::EndChild(); // hub_content
 
         // A launched Hub uninstall closes the app so the exe unlocks and the
         // uninstaller/self-delete helper can finish removing it.
         if (should_close) glfwSetWindowShouldClose(win, 1);
 
-        if (!status.empty()) {
-            ImGui::Separator();
-            ImGui::TextWrapped("%s", status.c_str());
-        }
+        ImGui::BeginChild("hub_status", ImVec2(0, 0), true,
+                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        const bool status_error = status.find("Failed") != std::string::npos ||
+                                  status.find("failed") != std::string::npos ||
+                                  status.find("error")  != std::string::npos ||
+                                  status.find("Error")  != std::string::npos;
+        ImGui::TextColored(status_error ? hub_ui::kDanger : hub_ui::kAccent, "STATUS");
+        ImGui::SameLine(0.0f, 14.0f);
+        ImGui::TextWrapped("%s", status.empty() ? "Ready" : status.c_str());
+        ImGui::EndChild();
 
         ImGui::End();
 
         ImGui::Render();
         int fbw, fbh; glfwGetFramebufferSize(win, &fbw, &fbh);
         glViewport(0, 0, fbw, fbh);
-        glClearColor(0.10f, 0.10f, 0.12f, 1.0f);
+        glClearColor(0.030f, 0.041f, 0.058f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(win);
