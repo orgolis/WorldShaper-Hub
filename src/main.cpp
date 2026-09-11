@@ -36,6 +36,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 using namespace schizo::project;
@@ -100,13 +101,49 @@ static void draw_feature_checklist(FeatureSet& features) {
 
 static void glfw_error(int e, const char* d) { std::fprintf(stderr, "GLFW %d: %s\n", e, d); }
 
+// Locate a development editor without baking one operating system's filename
+// or one launch directory into the Hub. GWS_DEV_EDITOR is the explicit escape
+// hatch; the remaining candidates cover packaged siblings and the usual
+// side-by-side WorldShaper-Hub/c-Engine-Game source checkout.
+static std::string find_dev_editor() {
+    std::vector<fs::path> candidates;
+    if (const char* configured = std::getenv("GWS_DEV_EDITOR"))
+        candidates.emplace_back(configured);
+
+    const fs::path hub_exe = this_executable_path();
+    const fs::path bin_dir = hub_exe.parent_path();
+#ifdef _WIN32
+    candidates.push_back(bin_dir / "editor.exe");
+    candidates.push_back(bin_dir / "GameWorldshaperEditor.exe");
+#else
+    candidates.push_back(bin_dir / "editor");
+    // <workspace>/WorldShaper-Hub/build-linux/bin/GameWorldshaperHub
+    // <workspace>/c-Engine-Game/build/linux-{debug,release}/bin/editor
+    const fs::path hub_root = bin_dir.parent_path().parent_path();
+    const fs::path workspace = hub_root.parent_path();
+    candidates.push_back(workspace / "c-Engine-Game" / "build" / "linux-debug" / "bin" / "editor");
+    candidates.push_back(workspace / "c-Engine-Game" / "build" / "linux-release" / "bin" / "editor");
+#endif
+
+    std::error_code ec;
+    for (const fs::path& candidate : candidates) {
+        if (!candidate.empty() && fs::is_regular_file(candidate, ec))
+            return fs::absolute(candidate, ec).string();
+        ec.clear();
+    }
+    return {};
+}
+
 // ---- Hub uninstall ---------------------------------------------------------
 // %APPDATA%/GameWorldshaper — where the Hub persists repo/token/recent-projects.
 static fs::path hub_config_dir() {
 #ifdef _WIN32
     if (const char* ad = std::getenv("APPDATA")) return fs::path(ad) / "GameWorldshaper";
-#endif
     if (const char* hp = std::getenv("USERPROFILE")) return fs::path(hp) / ".gameworldshaper";
+#else
+    if (const char* xdg = std::getenv("XDG_CONFIG_HOME")) return fs::path(xdg) / "gameworldshaper";
+    if (const char* hp = std::getenv("HOME")) return fs::path(hp) / ".config" / "gameworldshaper";
+#endif
     return fs::path(".") / ".gameworldshaper";
 }
 
@@ -231,8 +268,7 @@ int main() {
 
     ProjectsRegistry projects; projects.load();
     EngineRegistry   engines;
-    const std::string dev_editor =
-        (fs::path(this_executable_path()).parent_path() / "editor.exe").string();
+    const std::string dev_editor = find_dev_editor();
     engines.scan(dev_editor);
 
     // New-project form state.

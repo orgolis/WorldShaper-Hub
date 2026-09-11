@@ -213,19 +213,30 @@ bool create_project(const std::string& parent_dir,
 // User config paths
 // ============================================================================
 static fs::path config_dir() {
+#ifdef _WIN32
     if (const char* appdata = std::getenv("APPDATA"))
         return fs::path(appdata) / "GameWorldshaper";
     if (const char* home = std::getenv("USERPROFILE"))
         return fs::path(home) / ".gameworldshaper";
+#else
+    if (const char* xdg = std::getenv("XDG_CONFIG_HOME"))
+        return fs::path(xdg) / "gameworldshaper";
+    if (const char* home = std::getenv("HOME"))
+        return fs::path(home) / ".config" / "gameworldshaper";
+#endif
     return fs::path(".") / ".gameworldshaper";
 }
 
 std::string default_projects_dir() {
     fs::path base;
+#ifdef _WIN32
     if (const char* home = std::getenv("USERPROFILE"))
         base = fs::path(home) / "GameWorldshaper Projects";
-    else
-        base = fs::path(".") / "GameWorldshaper Projects";
+#else
+    if (const char* home = std::getenv("HOME"))
+        base = fs::path(home) / "GameWorldshaper Projects";
+#endif
+    if (base.empty()) base = fs::path(".") / "GameWorldshaper Projects";
     std::error_code ec;
     fs::create_directories(base, ec);
     return base.string();

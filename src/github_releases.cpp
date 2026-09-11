@@ -15,8 +15,13 @@ using json = nlohmann::json;
 namespace schizo::project {
 namespace {
 fs::path config_dir() {
+#ifdef _WIN32
     if (const char* ad = std::getenv("APPDATA")) return fs::path(ad) / "GameWorldshaper";
     if (const char* hp = std::getenv("USERPROFILE")) return fs::path(hp) / ".gameworldshaper";
+#else
+    if (const char* xdg = std::getenv("XDG_CONFIG_HOME")) return fs::path(xdg) / "gameworldshaper";
+    if (const char* hp = std::getenv("HOME")) return fs::path(hp) / ".config" / "gameworldshaper";
+#endif
     return fs::path(".") / ".gameworldshaper";
 }
 
