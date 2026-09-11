@@ -27,6 +27,12 @@ cmake --build --preset windows
 # -> build/bin/GameWorldshaperHub.exe  (+ the 3 MinGW runtime DLLs beside it)
 ```
 
+#Linux Build
+```sh
+cmake -S . -B build-linux -DCMAKE_BUILD_TYPE=Release
+cmake --build build-linux -j
+./build-linux/bin/GameWorldshaperHub
+```
 Package an installer (ZIP always; a Windows `.exe` installer when NSIS/`makensis`
 is on PATH):
 
