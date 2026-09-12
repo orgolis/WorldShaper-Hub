@@ -11,6 +11,11 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <cerrno>
+#include <cstring>
+#include <limits.h>
+#include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -23,15 +28,24 @@ std::string this_executable_path() {
     DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
     return (n > 0) ? std::string(buf, n) : std::string();
 #else
-    return {};
+    char buf[PATH_MAX] = {0};
+    const ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    return n > 0 ? std::string(buf, static_cast<size_t>(n)) : std::string();
 #endif
 }
 
 std::string EngineRegistry::engines_dir() {
+#ifdef _WIN32
     if (const char* la = std::getenv("LOCALAPPDATA"))
         return (fs::path(la) / "GameWorldshaper" / "Engines").string();
     if (const char* home = std::getenv("USERPROFILE"))
         return (fs::path(home) / ".gameworldshaper" / "Engines").string();
+#else
+    if (const char* data = std::getenv("XDG_DATA_HOME"))
+        return (fs::path(data) / "gameworldshaper" / "Engines").string();
+    if (const char* home = std::getenv("HOME"))
+        return (fs::path(home) / ".local" / "share" / "gameworldshaper" / "Engines").string();
+#endif
     return (fs::path(".") / "engines").string();
 }
 
@@ -257,8 +271,21 @@ bool launch_editor(const EngineVersion& ev, const std::string& project_manifest_
     spdlog::info("[engines] launched {} ({}) -> {}", ev.version, ev.editor_exe, project_manifest_path);
     return true;
 #else
-    (void)project_manifest_path;
-    return false;
+    const pid_t pid = fork();
+    if (pid < 0) {
+        spdlog::error("[engines] fork failed: {}", std::strerror(errno));
+        return false;
+    }
+    if (pid == 0) {
+        if (!ev.install_dir.empty() && chdir(ev.install_dir.c_str()) != 0)
+            _exit(126);
+        execl(ev.editor_exe.c_str(), ev.editor_exe.c_str(),
+              "--project", project_manifest_path.c_str(), static_cast<char*>(nullptr));
+        _exit(127);
+    }
+    spdlog::info("[engines] launched {} ({}) -> {}", ev.version, ev.editor_exe,
+                 project_manifest_path);
+    return true;
 #endif
 }
 
