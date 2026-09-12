@@ -16,10 +16,13 @@ it must not be tied to any single one.
 
 ## Build
 
-Requires CMake ≥ 3.20 and a C++20 compiler. On Windows the pinned toolchain is
-Ninja + MinGW g++ (Strawberry Perl's toolchain). Dependencies (GLFW, Dear ImGui,
+Requires CMake ≥ 3.20 and a C++20 compiler. Dependencies (GLFW, Dear ImGui,
 spdlog, nlohmann/json) are fetched automatically via CMake **FetchContent** — no
 submodules, no vendored source.
+
+### Windows
+
+The pinned toolchain is Ninja + MinGW g++ (Strawberry Perl's toolchain).
 
 ```sh
 cmake --preset windows          # first configure downloads the deps
@@ -27,18 +30,39 @@ cmake --build --preset windows
 # -> build/bin/GameWorldshaperHub.exe  (+ the 3 MinGW runtime DLLs beside it)
 ```
 
-#Linux Build
-```sh
-cmake -S . -B build-linux -DCMAKE_BUILD_TYPE=Release
-cmake --build build-linux -j
-./build-linux/bin/GameWorldshaperHub
-```
 Package an installer (ZIP always; a Windows `.exe` installer when NSIS/`makensis`
 is on PATH):
 
 ```sh
 cd build && cpack
 ```
+
+### Linux
+
+On Ubuntu, GLFW and OpenGL need their development packages first:
+
+```sh
+sudo apt-get install build-essential cmake libgl1-mesa-dev xorg-dev \
+  libwayland-dev libxkbcommon-dev wayland-protocols
+```
+
+```sh
+cmake -S . -B build-linux -DCMAKE_BUILD_TYPE=Release
+cmake --build build-linux -j
+./build-linux/bin/GameWorldshaperHub
+```
+
+**What works on Linux:** creating, importing and opening projects, and launching
+a locally built editor. The Hub finds one automatically in a sibling checkout
+(`c-Engine-Game/build/linux-debug/bin/editor` or `linux-release`), or wherever
+`GWS_DEV_EDITOR` points. Engines install under
+`~/.local/share/gameworldshaper/Engines`, settings under
+`~/.config/gameworldshaper`.
+
+**Not yet on Linux:** downloading engine versions and updating the Hub itself.
+The HTTP client is Windows-only, and the engine publishes no Linux packages yet,
+so both report "not supported" rather than doing anything. Build the engine
+from source instead (see its README).
 
 ---
 
