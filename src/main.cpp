@@ -207,6 +207,12 @@ static void apply_theme(GLFWwindow* window) {
     }
 }
 
+// Layout sizes in multiples of the current font size. apply_theme() loads the
+// font at 15.5 px times the monitor's scale, so em() follows Windows display
+// scaling; fixed pixel sizes clipped the header and the status bar at 125% and
+// 150%, which is where most laptops run.
+static float em(float n) { return ImGui::GetFontSize() * n; }
+
 static void page_header(const char* title, const char* description) {
     ImGui::SetWindowFontScale(1.35f);
     ImGui::TextUnformatted(title);
@@ -223,7 +229,7 @@ static bool nav_item(const char* label, bool selected) {
         ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.08f, 0.34f, 0.42f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Text, kAccentHot);
     }
-    const bool clicked = ImGui::Selectable(label, selected, 0, ImVec2(0, 42.0f));
+    const bool clicked = ImGui::Selectable(label, selected, 0, ImVec2(0, em(2.7f)));
     if (selected) ImGui::PopStyleColor(2);
     ImGui::PopStyleVar();
     return clicked;
@@ -485,10 +491,14 @@ int main() {
         // Brand header and live workspace summary. This replaces the oversized
         // title + tab strip with a stable application shell: navigation stays in
         // one place while counts remain visible on every page.
-        ImGui::BeginChild("hub_header", ImVec2(0, 72.0f), true,
+        // Sized by its content: a fixed 72 px lost the subtitle at 125% scaling.
+        ImGui::BeginChild("hub_header", ImVec2(0, 0),
+                          ImGuiChildFlags_Border | ImGuiChildFlags_AutoResizeY,
                           ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        const float title_y = ImGui::GetCursorPosY();
         ImGui::PushStyleColor(ImGuiCol_Text, hub_ui::kAccentHot);
         ImGui::SetWindowFontScale(1.55f);
+        const float title_h = ImGui::GetFontSize();
         ImGui::TextUnformatted("WORLD SHAPER");
         ImGui::SetWindowFontScale(1.0f);
         ImGui::PopStyleColor();
@@ -500,13 +510,31 @@ int main() {
         const float summary_x = ImGui::GetWindowWidth() -
                                 ImGui::CalcTextSize(summary.c_str()).x -
                                 ImGui::GetStyle().WindowPadding.x;
-        ImGui::SetCursorPos(ImVec2(std::max(ImGui::GetCursorPosX(), summary_x), 27.0f));
+        // Centred on the title line at any scale.
+        ImGui::SetCursorPos(ImVec2(std::max(ImGui::GetCursorPosX(), summary_x),
+                                   title_y + (title_h - ImGui::GetTextLineHeight()) * 0.5f));
         ImGui::TextColored(hub_ui::kMuted, "%s", summary.c_str());
         ImGui::EndChild();
         ImGui::Dummy(ImVec2(0, 2));
 
-        constexpr float footer_height = 48.0f;
-        ImGui::BeginChild("hub_navigation", ImVec2(190.0f, -footer_height), true);
+        // The status bar is sized to its text, up to four lines, and scrolls
+        // beyond that. A fixed height clipped every status that wrapped, and
+        // the ones that wrap are the failures: it cut off the half that says
+        // what went wrong. Measured with the same wrap width the bar uses.
+        const ImGuiStyle& shell_style = ImGui::GetStyle();
+        const float status_gap = hub_ui::em(0.9f);
+        const float status_wrap_w =
+            std::max(1.0f, ImGui::GetContentRegionAvail().x -
+                           2.0f * (shell_style.WindowPadding.x + shell_style.ChildBorderSize) -
+                           ImGui::CalcTextSize("STATUS").x - status_gap);
+        const float status_text_h =
+            std::min(ImGui::CalcTextSize(status.empty() ? "Ready" : status.c_str(),
+                                         nullptr, false, status_wrap_w).y,
+                     ImGui::GetTextLineHeight() * 4.0f);
+        const float footer_height =
+            status_text_h + 2.0f * (shell_style.WindowPadding.y + shell_style.ChildBorderSize) +
+            shell_style.ItemSpacing.y;
+        ImGui::BeginChild("hub_navigation", ImVec2(hub_ui::em(12.25f), -footer_height), true);
         ImGui::TextDisabled("WORKSPACE");
         ImGui::Dummy(ImVec2(0, 4));
         if (hub_ui::nav_item("Projects",        active_page == 0)) active_page = 0;
@@ -605,10 +633,11 @@ int main() {
 
                 // Per-project settings live in their OWN scrollable region so the
                 // engine-version + modules controls are never clipped off the
-                // bottom of the fixed-size window.
+                // bottom of the fixed-size window. It fills the page: the space it
+                // used to leave below was for the status line, which now has its
+                // own bar outside this page.
                 ImGui::Dummy(ImVec2(0, 4));
-                ImGui::BeginChild("projdetail",
-                                  ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 1.5f), true);
+                ImGui::BeginChild("projdetail", ImVec2(0, 0), true);
                 if (!can)
                     ImGui::TextDisabled("Select a project above to change its engine version or toggle its modules.");
 
@@ -953,14 +982,13 @@ int main() {
         // uninstaller/self-delete helper can finish removing it.
         if (should_close) glfwSetWindowShouldClose(win, 1);
 
-        ImGui::BeginChild("hub_status", ImVec2(0, 0), true,
-                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        ImGui::BeginChild("hub_status", ImVec2(0, 0), true);
         const bool status_error = status.find("Failed") != std::string::npos ||
                                   status.find("failed") != std::string::npos ||
                                   status.find("error")  != std::string::npos ||
                                   status.find("Error")  != std::string::npos;
         ImGui::TextColored(status_error ? hub_ui::kDanger : hub_ui::kAccent, "STATUS");
-        ImGui::SameLine(0.0f, 14.0f);
+        ImGui::SameLine(0.0f, status_gap);
         ImGui::TextWrapped("%s", status.empty() ? "Ready" : status.c_str());
         ImGui::EndChild();
 

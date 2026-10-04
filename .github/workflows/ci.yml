@@ -1,0 +1,90 @@
+# ============================================================================
+# Hub CI: build and self-test on Windows and Linux, on every push and PR.
+#
+# Until this existed the Hub had no CI at all, only the tag-triggered release
+# build. That is how PR #12 (Linux support) merged with nothing building either
+# platform, and how a broken Windows build would first surface: as a broken
+# release that every installed Hub offers to self-update to.
+#
+# `hub_selftest --local` is the network-free half of the self-test: the
+# projects registry, importing a folder, and create_project (manifest, LFS
+# rules, git init and the first commit). The network half installs an engine
+# from real GitHub Releases, so it stays a manual run.
+#
+# The Linux job installs exactly the packages the README lists, so the README's
+# build instructions are what CI proves.
+#
+# NOTE for editors of this file: never put `shell:` on a `uses:` step. That is
+# invalid and fails the run in 0s.
+# ============================================================================
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# A newer push to the same branch/PR supersedes an in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: msys2 {0}   # the same MinGW toolchain the release build uses
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MinGW toolchain (g++, cmake, ninja, git)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            git
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+
+      - name: Build the Hub and its self-test
+        run: cmake --build build --target GameWorldshaperHub hub_selftest -j
+
+      - name: Self-test (network-free)
+        run: ./build/bin/hub_selftest.exe --local
+
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies (the README's list)
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential cmake libgl1-mesa-dev xorg-dev \
+            libwayland-dev libxkbcommon-dev wayland-protocols
+
+      - name: Configure (the README's command)
+        run: cmake -S . -B build-linux -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build the Hub and its self-test
+        run: cmake --build build-linux --target GameWorldshaperHub hub_selftest -j
+
+      - name: Self-test (network-free)
+        run: ./build-linux/bin/hub_selftest --local
