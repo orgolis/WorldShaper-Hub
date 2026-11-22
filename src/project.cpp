@@ -112,6 +112,7 @@ bool ProjectManifest::save(const std::string& manifest_path, const ProjectManife
         }
     }
     out << "features = " << csv << "\n";
+    for (const auto& line : m.other_lines) out << line << "\n";   // the engine's settings, as they were
     return true;
 }
 
@@ -127,13 +128,19 @@ bool ProjectManifest::load(const std::string& manifest_path, ProjectManifest& ou
 
     std::string line;
     while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
         std::string t = trim(line);
-        if (t.empty() || t[0] == '#') continue;
+        if (t.empty() || t == "# GameWorldshaper project file") continue;   // (save() writes the header)
+        if (t[0] == '#') { out.other_lines.push_back(line); continue; }
         size_t eq = t.find('=');
-        if (eq == std::string::npos) continue;
+        if (eq == std::string::npos) { out.other_lines.push_back(line); continue; }
         std::string key = trim(t.substr(0, eq));
         std::string val = trim(t.substr(eq + 1));
 
+        if (key != "name" && key != "engine_version" && key != "default_scene" && key != "features") {
+            out.other_lines.push_back(line);   // not the Hub's: kept for the engine
+            continue;
+        }
         if (key == "name")                out.name           = val;
         else if (key == "engine_version") out.engine_version = val;
         else if (key == "default_scene")  out.default_scene  = val;

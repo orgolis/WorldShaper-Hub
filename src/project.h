@@ -23,6 +23,12 @@ struct ProjectManifest {
     std::string default_scene  = "scenes/main.scene";  // relative to project_dir
     FeatureSet  features       = FeatureSet::defaults();
 
+    // Every other line of the file -- the engine's own settings (`escape = game`,
+    // ...) and comments -- kept as it was and written back after the Hub's
+    // own keys. A Hub that wrote only the keys it knows erased whatever the
+    // engine had added each time it changed the engine version.
+    std::vector<std::string> other_lines;
+
     // Absolute path to the project folder. Filled by load(); not serialized.
     std::string project_dir;
 

@@ -106,6 +106,35 @@ static int run_local_checks() {
     check("import created assets/scripts/",   fs::is_directory(tmp / "MyGame" / "assets" / "scripts", ec));
     check("import created assets/skies/",     fs::is_directory(tmp / "MyGame" / "assets" / "skies", ec));
 
+    // A manifest's lines the Hub does not manage survive a change of engine version
+    // (the engine's `escape = game` was erased by every save before 0.1.10).
+    {
+        const fs::path mp = tmp / "MyGame" / "keep.schizo";
+        {
+            std::ofstream o(mp);
+            o << "# GameWorldshaper project file\nname = Keep\nengine_version = 0.8.60\ndefault_scene = scenes/start.scene\n"
+              << "features = Physics\nescape = game\n# a note of the author's\nsome_future_key = 1\n";
+        }
+        ProjectManifest km;
+        check("a manifest with the engine's own settings loads", ProjectManifest::load(mp.string(), km) && km.engine_version == "0.8.60");
+        km.engine_version = "0.8.65";
+        ProjectManifest::save(mp.string(), km);
+        std::ifstream i(mp);
+        std::string text((std::istreambuf_iterator<char>(i)), std::istreambuf_iterator<char>());
+        check("changing its engine version keeps escape = game", text.find("escape = game") != std::string::npos);
+        check("and the author's comment and keys the Hub does not know", text.find("# a note of the author's") != std::string::npos &&
+                                                                         text.find("some_future_key = 1") != std::string::npos);
+        check("and writes the new version once, the header once", text.find("engine_version = 0.8.65") != std::string::npos &&
+                                                                  text.find("0.8.60") == std::string::npos &&
+                                                                  text.find("# GameWorldshaper project file") == text.rfind("# GameWorldshaper project file"));
+        ProjectManifest again;
+        ProjectManifest::load(mp.string(), again);
+        ProjectManifest::save(mp.string(), again);
+        std::ifstream i2(mp);
+        std::string text2((std::istreambuf_iterator<char>(i2)), std::istreambuf_iterator<char>());
+        check("saving it again changes nothing (no lines doubled)", text2 == text);
+    }
+
     // Re-importing the same folder must adopt the existing manifest (idempotent).
     std::string mpath2, name2;
     bool imp2 = import_existing_project((tmp / "MyGame").string(), "9.9.9", mpath2, name2);
